@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Rush - MEV 模拟器</title>
+    <title>Agent Rush - MEV Simulator</title>
     <link rel="stylesheet" href="style.css">
     <script src="config/env.js"></script>
   </head>
@@ -42,20 +42,22 @@
           <p class="label">Round Timer</p>
           <strong id="round-timer">Ready</strong>
         </div>
-        <button id="skip-button" class="secondary-button" type="button">跳过</button>
-        <button id="play-button" class="primary-button" type="button" disabled>出牌</button>
+        <button id="skip-button" class="secondary-button" type="button">Skip</button>
+        <button id="play-button" class="primary-button" type="button" disabled>Play</button>
       </section>
     </main>
 
     <script type="module">
       import { GameState } from './src/core/GameState.js'
       import { RoundEngine } from './src/game/RoundEngine.js'
+      import { ProgressionEngine } from './src/game/ProgressionEngine.js'
       import { UIRenderer } from './src/ui/UIRenderer.js'
       import { ExecutorAI } from './src/ai/ExecutorAI.js'
 
       UIRenderer.init()
       ExecutorAI.init()
       GameState.init()
+      ProgressionEngine.setRoundStarter((gameState) => RoundEngine.startRound(gameState))
 
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
       UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
@@ -63,6 +65,7 @@
       RoundEngine.startRound(GameState)
       window.GameState = GameState
       window.RoundEngine = RoundEngine
+      window.ProgressionEngine = ProgressionEngine
     </script>
   </body>
 </html>
