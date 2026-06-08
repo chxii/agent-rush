@@ -1,4 +1,4 @@
-﻿let continueCallback = null
+let continueCallback = null
 let rowTimerIds = []
 
 export const SettlementPanel = {

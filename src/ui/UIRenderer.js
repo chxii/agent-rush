@@ -1,4 +1,4 @@
-﻿import { SCENES } from '../config/scenes.js'
+import { SCENES } from '../config/scenes.js'
 
 const elements = {
   header: null,
