@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Rush - MEV 模拟器</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="config/env.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="top-band">
+        <div>
+          <p class="eyebrow">Agent Rush</p>
+          <h1>MEV Execution Console</h1>
+        </div>
+        <div id="header" class="header-grid"></div>
+      </section>
+
+      <section class="main-grid">
+        <aside class="side-panel">
+          <h2>Agents</h2>
+          <div id="agent-panel" class="agent-list"></div>
+        </aside>
+
+        <section class="play-surface">
+          <div id="mempool-view" class="mempool-view" aria-label="Mempool stream">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div id="hand-area" class="hand-area"></div>
+        </section>
+
+        <aside id="log-panel" class="log-panel" aria-live="polite"></aside>
+      </section>
+
+      <section id="action-bar" class="action-bar">
+        <div>
+          <p class="label">Round Timer</p>
+          <strong id="round-timer">Ready</strong>
+        </div>
+        <button id="skip-button" class="secondary-button" type="button">跳过</button>
+        <button id="play-button" class="primary-button" type="button" disabled>出牌</button>
+      </section>
+    </main>
+
+    <script type="module">
+      import { GameState } from './src/core/GameState.js'
+      import { RoundEngine } from './src/game/RoundEngine.js'
+      import { UIRenderer } from './src/ui/UIRenderer.js'
+      import { ExecutorAI } from './src/ai/ExecutorAI.js'
+
+      UIRenderer.init()
+      ExecutorAI.init()
+      GameState.init()
+
+      UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
+      UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
+
+      RoundEngine.startRound(GameState)
+      window.GameState = GameState
+      window.RoundEngine = RoundEngine
+    </script>
+  </body>
+</html>

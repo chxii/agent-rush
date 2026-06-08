@@ -1,0 +1,350 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutorSchemas",
+  "description": "Agent Rush v3 — Executor AI 全部 5 个调用点的输入/输出 schema",
+
+  "definitions": {
+
+    "CardId": {
+      "type": "string",
+      "description": "牌的唯一 ID，格式: <类型>_<序号>，如 sandwich_B"
+    },
+
+    "CardStatus": {
+      "type": "string",
+      "enum": ["pending", "in_progress", "success", "failed", "abandoned", "replaced"]
+    },
+
+    "ActionType": {
+      "type": "string",
+      "enum": [
+        "fetch_prices",
+        "broadcast_tx",
+        "replace_tx",
+        "monitor_mempool",
+        "scan_replacement",
+        "abandon_card",
+        "reallocate_gas"
+      ]
+    },
+
+    "EventType": {
+      "type": "string",
+      "enum": [
+        "target_stolen",
+        "tx_failed",
+        "gas_insufficient",
+        "competitor_detected",
+        "time_window_expired"
+      ]
+    },
+
+    "CardParam": {
+      "type": "object",
+      "required": ["id", "type", "expectedProfit", "gasBudget", "riskRating", "timeWindowSec"],
+      "additionalProperties": false,
+      "properties": {
+        "id":             { "$ref": "#/definitions/CardId" },
+        "type":           { "type": "string", "enum": ["arbitrage", "sandwich", "nft_snipe", "front_run", "liquidation", "bridge_arb"] },
+        "expectedProfit": { "type": "number", "minimum": 0, "description": "ETH" },
+        "gasBudget":      { "type": "integer", "minimum": 1, "description": "Gwei，玩家预分配值" },
+        "riskRating":     { "type": "number", "minimum": 0, "maximum": 1, "description": "0.0–1.0" },
+        "timeWindowSec":  { "type": "integer", "minimum": 1, "description": "机会剩余有效秒数" },
+        "targetTxHash":   { "type": "string", "description": "被夹击/跟单的目标交易哈希，三明治/抢跑牌必填" }
+      }
+    },
+
+    "CompletedCard": {
+      "type": "object",
+      "required": ["id", "status", "actualProfit", "gasUsed"],
+      "additionalProperties": false,
+      "properties": {
+        "id":           { "$ref": "#/definitions/CardId" },
+        "status":       { "$ref": "#/definitions/CardStatus" },
+        "actualProfit": { "type": "number", "description": "ETH，失败/放弃为 0 或负值" },
+        "gasUsed":      { "type": "integer", "description": "Gwei" }
+      }
+    },
+
+    "Competitor": {
+      "type": "object",
+      "required": ["name", "gasBid", "targetCardId"],
+      "additionalProperties": false,
+      "properties": {
+        "name":        { "type": "string", "enum": ["Bot-404", "Shadow", "Phantom", "Phantom+", "Genesis"] },
+        "gasBid":      { "type": "integer", "description": "Gwei" },
+        "targetCardId":{ "$ref": "#/definitions/CardId" }
+      }
+    },
+
+    "ExecutionStep": {
+      "type": "object",
+      "required": ["stepIndex", "action", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "stepIndex":   { "type": "integer", "minimum": 1 },
+        "action":      { "$ref": "#/definitions/ActionType" },
+        "description": { "type": "string", "description": "人类可读的步骤说明，用于 Thought Chain 展示" },
+        "params": {
+          "type": "object",
+          "description": "该 action 的参数，结构随 action 类型变化",
+          "additionalProperties": true
+        }
+      }
+    },
+
+    "GasAllocation": {
+      "type": "object",
+      "required": ["cardId", "gas"],
+      "additionalProperties": false,
+      "properties": {
+        "cardId": { "$ref": "#/definitions/CardId" },
+        "gas":    { "type": "integer", "minimum": 0, "description": "Gwei" }
+      }
+    },
+
+    "CandidatePlan": {
+      "type": "object",
+      "required": ["planId", "description", "gasAllocations", "expectedOutcome"],
+      "additionalProperties": false,
+      "properties": {
+        "planId":          { "type": "string" },
+        "description":     { "type": "string" },
+        "gasAllocations":  { "type": "array", "items": { "$ref": "#/definitions/GasAllocation" } },
+        "expectedOutcome": { "type": "string", "description": "预期结果的文字说明" },
+        "estimatedProfit": { "type": "number", "description": "ETH" },
+        "riskLevel":       { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+
+    "SceneInfo": {
+      "type": "object",
+      "required": ["sceneType", "layer", "enemyBotActivity"],
+      "additionalProperties": false,
+      "properties": {
+        "sceneType":        { "type": "string", "enum": ["dex_arb", "new_token", "nft_market", "cross_chain", "lending", "whale_tracking", "flashbots", "dao_governance"] },
+        "layer":            { "type": "integer", "minimum": 1, "maximum": 20 },
+        "enemyBotActivity": { "type": "string", "enum": ["none", "low", "medium", "high"] }
+      }
+    },
+
+    "ExecutionLogEntry": {
+      "type": "object",
+      "required": ["timestampMs", "action", "input", "output", "success"],
+      "additionalProperties": false,
+      "properties": {
+        "timestampMs": { "type": "integer" },
+        "action":      { "$ref": "#/definitions/ActionType" },
+        "input":       { "type": "object", "additionalProperties": true },
+        "output":      { "type": "object", "additionalProperties": true },
+        "success":     { "type": "boolean" }
+      }
+    },
+
+    "DecisionHighlight": {
+      "type": "object",
+      "required": ["momentLabel", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "momentLabel": {
+          "type": "string",
+          "enum": ["task_decomposition", "multi_step_planning", "tool_call", "iterative_repair", "workflow_closure"]
+        },
+        "description": { "type": "string", "description": "评审可直接朗读的一句话说明" }
+      }
+    }
+  },
+
+  "调用1_InitialPlanning": {
+    "description": "玩家出牌确认 → Executor 制定初始执行计划",
+
+    "input": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InitialPlanningInput",
+      "type": "object",
+      "required": ["cards", "totalGasPool", "scene", "remainingTimeWindowSec"],
+      "additionalProperties": false,
+      "properties": {
+        "cards":                  { "type": "array", "items": { "$ref": "#/definitions/CardParam" }, "minItems": 1, "maxItems": 4 },
+        "totalGasPool":           { "type": "integer", "minimum": 0, "description": "Gwei" },
+        "scene":                  { "$ref": "#/definitions/SceneInfo" },
+        "remainingTimeWindowSec": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "output": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InitialPlanningOutput",
+      "type": "object",
+      "required": ["reasoning", "executionOrder", "gasAllocations"],
+      "additionalProperties": false,
+      "properties": {
+        "reasoning":      { "type": "string", "description": "Thought Chain 展示文本，说明排序和分配理由" },
+        "executionOrder": { "type": "array", "items": { "$ref": "#/definitions/CardId" }, "description": "牌的执行顺序" },
+        "gasAllocations": { "type": "array", "items": { "$ref": "#/definitions/GasAllocation" } }
+      }
+    }
+  },
+
+  "调用2_SingleCardPlan": {
+    "description": "开始执行某张牌 → Executor 拆解该牌的具体步骤",
+
+    "input": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SingleCardPlanInput",
+      "type": "object",
+      "required": ["card", "allocatedGas", "remainingGasPool", "completedCards"],
+      "additionalProperties": false,
+      "properties": {
+        "card":             { "$ref": "#/definitions/CardParam" },
+        "allocatedGas":     { "type": "integer", "description": "Gwei，为本牌分配的 Gas" },
+        "remainingGasPool": { "type": "integer", "description": "Gwei，全局剩余" },
+        "completedCards":   { "type": "array", "items": { "$ref": "#/definitions/CompletedCard" } }
+      }
+    },
+
+    "output": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SingleCardPlanOutput",
+      "type": "object",
+      "required": ["reasoning", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "reasoning": { "type": "string" },
+        "steps":     { "type": "array", "items": { "$ref": "#/definitions/ExecutionStep" }, "minItems": 2, "maxItems": 8 }
+      }
+    }
+  },
+
+  "调用3_IncidentResponse": {
+    "description": "意外事件触发 → Executor 制定新策略",
+
+    "input": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "IncidentResponseInput",
+      "type": "object",
+      "required": ["event", "affectedCardId", "remainingGasPool", "allCardStatuses", "competitors"],
+      "additionalProperties": false,
+      "properties": {
+        "event":            { "$ref": "#/definitions/EventType" },
+        "affectedCardId":   { "$ref": "#/definitions/CardId" },
+        "remainingGasPool": { "type": "integer", "description": "Gwei" },
+        "allCardStatuses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "status", "allocatedGas"],
+            "additionalProperties": false,
+            "properties": {
+              "id":           { "$ref": "#/definitions/CardId" },
+              "status":       { "$ref": "#/definitions/CardStatus" },
+              "allocatedGas": { "type": "integer" }
+            }
+          }
+        },
+        "competitors": { "type": "array", "items": { "$ref": "#/definitions/Competitor" } }
+      }
+    },
+
+    "output": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "IncidentResponseOutput",
+      "type": "object",
+      "required": ["reasoning", "selectedPlanId", "candidatePlans"],
+      "additionalProperties": false,
+      "properties": {
+        "reasoning":       { "type": "string", "description": "Thought Chain 展示：为什么选这个方案" },
+        "selectedPlanId":  { "type": "string" },
+        "candidatePlans":  { "type": "array", "items": { "$ref": "#/definitions/CandidatePlan" }, "minItems": 1, "maxItems": 3 }
+      }
+    }
+  },
+
+  "调用4_PlayerIntervention": {
+    "description": "玩家暂停并注入自然语言指令 → Executor 融合意图更新执行计划",
+
+    "input": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PlayerInterventionInput",
+      "type": "object",
+      "required": ["playerInstruction", "currentExecutionState"],
+      "additionalProperties": false,
+      "properties": {
+        "playerInstruction": { "type": "string", "description": "玩家的自然语言指令" },
+        "currentExecutionState": {
+          "type": "object",
+          "required": ["remainingGasPool", "allCardStatuses"],
+          "additionalProperties": false,
+          "properties": {
+            "remainingGasPool": { "type": "integer" },
+            "allCardStatuses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "status", "allocatedGas"],
+                "additionalProperties": false,
+                "properties": {
+                  "id":           { "$ref": "#/definitions/CardId" },
+                  "status":       { "$ref": "#/definitions/CardStatus" },
+                  "allocatedGas": { "type": "integer" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "output": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PlayerInterventionOutput",
+      "type": "object",
+      "required": ["reasoning", "interpretedIntent", "updatedGasAllocations", "updatedExecutionOrder"],
+      "additionalProperties": false,
+      "properties": {
+        "reasoning":              { "type": "string" },
+        "interpretedIntent":      { "type": "string", "description": "Executor 对玩家意图的解读，展示在 Thought Chain" },
+        "updatedGasAllocations":  { "type": "array", "items": { "$ref": "#/definitions/GasAllocation" } },
+        "updatedExecutionOrder":  { "type": "array", "items": { "$ref": "#/definitions/CardId" } }
+      }
+    }
+  },
+
+  "调用5_SettlementReport": {
+    "description": "所有牌执行完毕 → Executor 生成结算报告",
+
+    "input": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SettlementReportInput",
+      "type": "object",
+      "required": ["completedCards", "executionLog", "totalGasUsed", "initialGasPool"],
+      "additionalProperties": false,
+      "properties": {
+        "completedCards":  { "type": "array", "items": { "$ref": "#/definitions/CompletedCard" } },
+        "executionLog":    { "type": "array", "items": { "$ref": "#/definitions/ExecutionLogEntry" } },
+        "totalGasUsed":    { "type": "integer", "description": "Gwei" },
+        "initialGasPool":  { "type": "integer", "description": "Gwei" }
+      }
+    },
+
+    "output": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SettlementReportOutput",
+      "type": "object",
+      "required": ["reasoning", "summary", "netProfit", "decisionHighlights"],
+      "additionalProperties": false,
+      "properties": {
+        "reasoning":          { "type": "string", "description": "内部推理，不展示给玩家" },
+        "summary":            { "type": "string", "description": "自然语言总结，展示在结算面板" },
+        "netProfit":          { "type": "number", "description": "ETH，本轮净利润" },
+        "decisionHighlights": {
+          "type": "array",
+          "items":    { "$ref": "#/definitions/DecisionHighlight" },
+          "minItems": 1,
+          "maxItems": 5,
+          "description": "评审可直接指认的 Long-Horizon 时刻，至少 1 条"
+        }
+      }
+    }
+  }
+}
