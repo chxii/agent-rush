@@ -8,6 +8,7 @@ const elements = {
   playButton: null,
   skipButton: null,
   timer: null,
+  actionBar: null,
 }
 
 let cardClickCallback = null
@@ -22,6 +23,7 @@ export const UIRenderer = {
     elements.playButton = document.querySelector('#play-button')
     elements.skipButton = document.querySelector('#skip-button')
     elements.timer = document.querySelector('#round-timer')
+    elements.actionBar = document.querySelector('#action-bar')
 
     elements.handArea?.addEventListener('click', (event) => {
       const cardButton = event.target.closest('[data-card-id]')
@@ -78,14 +80,16 @@ export const UIRenderer = {
       .join('')
   },
 
-  renderHand(cards, selectedIds = []) {
+  renderHand(cards, selectedIds = [], options = {}) {
     const selectedSet = new Set(selectedIds)
+    const phase = options.phase ?? 'play'
+    const isPlayable = phase === 'play'
 
     elements.handArea.innerHTML = cards
       .map((card) => {
         const riskPercent = Math.round(card.displayedRisk * 100)
         return `
-          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${card.rarity}" data-card-id="${card.id}" type="button">
+          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${card.rarity}" data-card-id="${card.id}" type="button" ${isPlayable ? '' : 'disabled'}>
             <span class="card-top">
               <span>${typeLabel(card.type)}</span>
               <span class="rarity">${card.rarity}</span>
@@ -94,41 +98,13 @@ export const UIRenderer = {
             <span class="metric">Gas ${card.gasCost} Gwei</span>
             <span class="metric risk-${riskBucket(card.displayedRisk)}">Risk ${riskPercent}%</span>
             <span class="metric">Window ${card.timeWindowSec}s</span>
-            <span class="reason">${card.isScam ? '⚠ ' : ''}${card.riskReason}</span>
+            <span class="reason">${card.isScam ? '! ' : ''}${card.riskReason}</span>
           </button>
         `
       })
       .join('')
 
-    this.setPlayEnabled(selectedIds.length > 0)
-  },
-
-  renderSettlement(roundResult) {
-    const rows = roundResult.results
-      .map((result) => {
-        const content = result.success
-          ? `${result.cardId}: +${result.actualProfit.toFixed(2)} ETH`
-          : `${result.cardId}: 失败`
-        return `<div class="settlement-line ${result.success ? 'success' : 'failure'}">${content}</div>`
-      })
-      .join('')
-
-    elements.logPanel.insertAdjacentHTML(
-      'beforeend',
-      `
-        <section class="settlement">
-          <h2>Settlement</h2>
-          ${rows || '<div class="settlement-line">跳过本轮，没有执行机会。</div>'}
-          <div class="settlement-total">Net ${formatEth(roundResult.netProfit)} · Gas -${roundResult.gasUsed}</div>
-        </section>
-      `,
-    )
-    elements.logPanel.scrollTop = elements.logPanel.scrollHeight
-  },
-
-  appendLog(message) {
-    elements.logPanel.insertAdjacentHTML('beforeend', `<div class="log-line">${escapeHtml(message)}</div>`)
-    elements.logPanel.scrollTop = elements.logPanel.scrollHeight
+    this.setPlayEnabled(isPlayable && selectedIds.length > 0)
   },
 
   setPlayEnabled(enabled) {
@@ -139,6 +115,17 @@ export const UIRenderer = {
 
   setTimerText(text) {
     if (elements.timer) elements.timer.textContent = text
+  },
+
+  setPhase(phase) {
+    document.body.dataset.phase = phase
+    if (elements.actionBar) {
+      elements.actionBar.dataset.phase = phase
+    }
+
+    const isPlay = phase === 'play'
+    if (elements.playButton) elements.playButton.disabled = !isPlay
+    if (elements.skipButton) elements.skipButton.disabled = !isPlay
   },
 
   onCardClick(callback) {
@@ -184,11 +171,3 @@ function formatEth(value) {
   return `${number >= 0 ? '+' : ''}${number.toFixed(2)} ETH`
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
