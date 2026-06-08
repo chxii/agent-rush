@@ -1,0 +1,27 @@
+# 依赖
+node_modules/
+
+# 环境变量 / API Key（绝对不提交）
+config/env.js
+
+# 设计文档、计划文档（仅本地）
+docs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志
+*.log
+npm-debug.log*
+
+# 构建产物（如果以后加了构建工具）
+dist/
+build/
