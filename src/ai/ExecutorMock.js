@@ -9,9 +9,9 @@ export const ExecutorMock = {
     return getFallbackPlan(callType, input)
   },
 
-  async callStreaming(callType, input = {}, onChunk = () => {}) {
+  async callStreaming(callType, input = {}, onChunk = () => {}, streamField = 'reasoning') {
     const response = await this.call(callType, input)
-    await streamText(response.reasoning ?? response.summary ?? '', onChunk)
+    await streamText(response[streamField] ?? response.reasoning ?? '', onChunk)
     return response
   },
 }

@@ -18,9 +18,9 @@ export const ExecutorAI = {
     return ExecutorMock.call(callType, input)
   },
 
-  async callStreaming(callType, input = {}, onChunk = () => {}) {
+  async callStreaming(callType, input = {}, onChunk = () => {}, streamField = 'reasoning') {
     await this.ensureReady()
-    return ExecutorMock.callStreaming(callType, input, onChunk)
+    return ExecutorMock.callStreaming(callType, input, onChunk, streamField)
   },
 
   async ensureReady() {

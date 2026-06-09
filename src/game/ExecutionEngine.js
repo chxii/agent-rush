@@ -20,7 +20,7 @@ export const ExecutionEngine = {
       appendLog('executor', `[执行] 开始执行 ${card.id} (${card.type})，Gas ${allocatedGas} Gwei`)
 
       if (elapsedSec > card.timeWindowSec) {
-        workingCard.status = 'expired'
+        workingCard.status = 'failed'
         workingCard.actualProfit = 0
         appendResultLog(workingCard, '时间窗口过期')
         executedCards.push(workingCard)
@@ -73,18 +73,6 @@ export const ExecutionEngine = {
     const cardsNotPlanned = cards.filter((card) => !orderedCards.some((planned) => planned.id === card.id))
     let remainingGasPool = initialGasPool
 
-    await callExecutor(executorAI, 'PlayerIntervention', {
-      playerInstruction: '继续当前计划',
-      currentExecutionState: {
-        remainingGasPool,
-        allCardStatuses: cards.map((card) => ({
-          id: card.id,
-          status: 'pending',
-          allocatedGas: allocationMap.get(card.id) ?? card.gasCost,
-        })),
-      },
-    })
-
     for (const card of [...orderedCards, ...cardsNotPlanned]) {
       const allocatedGas = allocationMap.get(card.id) ?? card.gasCost
       const workingCard = { ...card, allocatedGas, status: 'in_progress' }
@@ -98,21 +86,8 @@ export const ExecutionEngine = {
         completedCards: completedCards.map(toCompletedCard),
       })
 
-      for (const step of singleCardPlan.steps) {
-        appendLog('tool', `-> ${step.action}(${JSON.stringify(step.params ?? {})}) ...`)
-        executionLog.push({
-          timestampMs: Date.now(),
-          action: step.action,
-          input: step.params ?? {},
-          output: {},
-          success: true,
-        })
-
-        await delay(ADAPTIVE_STEP_DELAY_MS)
-
-        const competition = EnemyBotAI.compete(card, gameState)
-        if (!competition.stolen) continue
-
+      const competition = EnemyBotAI.compete(card, gameState)
+      if (competition.stolen) {
         appendLog('system', `[竞争] ${competition.botName} 抢占 ${card.id}`)
         const incidentResponse = await callExecutor(executorAI, 'IncidentResponse', {
           event: 'target_stolen',
@@ -133,11 +108,25 @@ export const ExecutionEngine = {
           workingCard.status = 'abandoned'
           workingCard.actualProfit = -gasLossToEth(card.gasCost)
           abandoned = true
-          break
+        } else {
+          repaired = true
+          appendLog('tool', `replace_tx(${card.id}, plan=${incidentResponse.selectedPlanId})`)
         }
+      }
 
-        repaired = true
-        appendLog('tool', `replace_tx(${card.id}, plan=${incidentResponse.selectedPlanId})`)
+      for (const step of singleCardPlan.steps) {
+        if (abandoned) break
+
+        appendLog('tool', `${step.action}(${JSON.stringify(step.params ?? {})}) ...`)
+        executionLog.push({
+          timestampMs: Date.now(),
+          action: step.action,
+          input: step.params ?? {},
+          output: {},
+          success: true,
+        })
+
+        await delay(ADAPTIVE_STEP_DELAY_MS)
       }
 
       if (!abandoned) {
@@ -158,9 +147,9 @@ export const ExecutionEngine = {
       executionLog,
       totalGasUsed: baseResult.gasUsed,
       initialGasPool,
+    }, {
+      streamField: 'summary',
     })
-
-    appendLog('executor', settlementReport.summary)
 
     return {
       ...baseResult,
@@ -174,12 +163,12 @@ export function uniformRandom(min, max) {
   return min + Math.random() * (max - min)
 }
 
-async function callExecutor(executorAI, callType, input) {
+async function callExecutor(executorAI, callType, input, options = {}) {
   const writer = ThoughtChainPanel.appendStreaming(`[${callType}] `)
   let response
 
   try {
-    response = await executorAI.callStreaming(callType, input, (chunk) => writer.write(chunk))
+    response = await executorAI.callStreaming(callType, input, (chunk) => writer.write(chunk), options.streamField)
   } catch (error) {
     writer.write('AI调用失败，使用保底策略。')
     appendLog('system', `[fallback] ${callType} 调用异常：${error.message}`)
