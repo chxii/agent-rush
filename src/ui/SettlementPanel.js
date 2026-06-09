@@ -10,6 +10,7 @@ export const SettlementPanel = {
       <div class="settlement-dialog">
         <h2>Round Settlement</h2>
         <div class="settlement-rows"></div>
+        ${formatHighlights(roundResult.decisionHighlights)}
         <div class="settlement-total">
           <span>Net ${formatSignedEth(roundResult.netProfit)}</span>
           <span>Gas ${roundResult.gasUsed} Gwei</span>
@@ -68,4 +69,23 @@ function clearRowTimers() {
 
 function formatSignedEth(value) {
   return `${value >= 0 ? '+' : ''}${Number(value).toFixed(3)} ETH`
+}
+
+function formatHighlights(highlights = []) {
+  if (!highlights.length) return ''
+
+  return `
+    <div class="decision-highlights">
+      ${highlights
+        .map(
+          (highlight) => `
+            <div class="decision-highlight">
+              <span>${highlight.momentLabel}</span>
+              <p>${highlight.description}</p>
+            </div>
+          `,
+        )
+        .join('')}
+    </div>
+  `
 }
