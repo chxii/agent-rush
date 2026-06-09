@@ -9,11 +9,13 @@ const CACHE_LIMIT = 50
 const STREAM_DELAY_MIN_MS = 20
 const STREAM_DELAY_MAX_MS = 30
 
-const SYSTEM_PROMPT = `你是 Agent Rush 游戏中的 Executor AI，负责在 MEV 模拟环境中执行交易策略。
-规则：
-1. 必须返回严格符合 JSON schema 的对象，不要输出任何额外文字
-2. reasoning 字段用中文，简洁直接（50字以内），会直接展示给玩家
-3. 每次决策都要体现：任务分解、多步规划、迭代修复中的至少一个特征`
+const SYSTEM_PROMPT = [
+  'You are the Executor AI in the Agent Rush game.',
+  'Return one strict JSON object that matches the requested schema.',
+  'Do not wrap the JSON in Markdown or add extra prose.',
+  'Use concise Chinese in display fields such as reasoning and summary.',
+  'Each decision should show task decomposition, multi-step planning, or iterative repair.',
+].join('\n')
 
 const _cache = new Map()
 
@@ -25,7 +27,7 @@ export const ExecutorAI = {
     this._useMock = !window.GLM_API_KEY
 
     if (this._useMock) {
-      console.warn('[ExecutorAI] 未找到 GLM_API_KEY，自动切换到 Mock 模式')
+      console.warn('[ExecutorAI] GLM_API_KEY not found. Switching to Mock mode.')
     }
 
     this._ready = SchemaValidator.init()
@@ -56,9 +58,19 @@ export const ExecutorAI = {
       return cached
     }
 
-    const response = await this.requestWithFallback(callType, input, { stream: true })
-    await streamText(response[streamField] ?? response.reasoning ?? '', onChunk)
-    return response
+    let emittedFieldDelta = false
+    const emitFieldDelta = (chunk) => {
+      if (!chunk) return
+      emittedFieldDelta = true
+      onChunk(chunk)
+    }
+
+    return this.requestWithFallback(callType, input, {
+      stream: true,
+      streamField,
+      onFieldDelta: emitFieldDelta,
+      hasEmittedFieldDelta: () => emittedFieldDelta,
+    })
   },
 
   async ensureReady() {
@@ -69,22 +81,22 @@ export const ExecutorAI = {
   async requestWithFallback(callType, input, options) {
     try {
       const response = options.stream
-        ? await requestStreamingJson(callType, input)
+        ? await requestStreamingJson(callType, input, options.onFieldDelta, options.streamField)
         : await requestJson(callType, input)
       const validation = SchemaValidator.validate(callType, response)
 
       if (!validation.valid) {
         console.warn(`[ExecutorAI] ${callType} schema validation failed`, validation.errors)
-        appendSystemLog('[自动降级] AI 响应格式不符合 schema，使用保底策略')
-        return getFallbackPlan(callType, input)
+        appendSystemLog('[auto fallback] AI response failed schema validation; using fallback plan.')
+        return replayFallbackIfNeeded(callType, input, options)
       }
 
       setCachedResponse(callType, input, response)
       return response
     } catch (error) {
       console.warn(`[ExecutorAI] ${callType} request failed`, error)
-      appendSystemLog('[自动降级] AI 响应超时，使用保底策略')
-      return getFallbackPlan(callType, input)
+      appendSystemLog('[auto fallback] AI response timed out or failed; using fallback plan.')
+      return replayFallbackIfNeeded(callType, input, options)
     }
   },
 }
@@ -112,18 +124,111 @@ export function getCacheKey(callType, input = {}) {
   return [callType, layer, cardIds, completedIds, event, affected].join('|')
 }
 
+export function createFieldValueExtractor(fieldName) {
+  const keyPattern = new RegExp(`"${escapeRegExp(fieldName)}"\\s*:\\s*"`)
+  const extractor = {
+    done: false,
+    _buffer: '',
+    _state: 'SEEKING_KEY',
+    _escaped: false,
+    _unicodeBuffer: null,
+
+    push(chunk) {
+      if (this.done || !chunk) return ''
+
+      this._buffer += chunk
+      let output = ''
+
+      if (this._state === 'SEEKING_KEY') {
+        const match = this._buffer.match(keyPattern)
+        if (!match || match.index === undefined) {
+          return ''
+        }
+
+        const valueStart = match.index + match[0].length
+        this._buffer = this._buffer.slice(valueStart)
+        this._state = 'IN_VALUE'
+      }
+
+      if (this._state === 'IN_VALUE') {
+        output += this._consumeValueBuffer()
+      }
+
+      return output
+    },
+
+    _consumeValueBuffer() {
+      let output = ''
+      let consumed = 0
+
+      for (let index = 0; index < this._buffer.length; index += 1) {
+        const char = this._buffer[index]
+        consumed = index + 1
+
+        if (this._unicodeBuffer !== null) {
+          if (/[0-9a-fA-F]/.test(char)) {
+            this._unicodeBuffer += char
+            if (this._unicodeBuffer.length === 4) {
+              output += String.fromCharCode(parseInt(this._unicodeBuffer, 16))
+              this._unicodeBuffer = null
+              this._escaped = false
+            }
+            continue
+          }
+
+          this._unicodeBuffer = null
+          this._escaped = false
+          output += char
+          continue
+        }
+
+        if (this._escaped) {
+          if (char === 'u') {
+            this._unicodeBuffer = ''
+            continue
+          }
+
+          output += decodeEscapedChar(char)
+          this._escaped = false
+          continue
+        }
+
+        if (char === '\\') {
+          this._escaped = true
+          continue
+        }
+
+        if (char === '"') {
+          this.done = true
+          this._state = 'DONE'
+          this._buffer = ''
+          return output
+        }
+
+        output += char
+      }
+
+      this._buffer = this._buffer.slice(consumed)
+      return output
+    },
+  }
+
+  return extractor
+}
+
 async function requestJson(callType, input) {
   const apiResponse = await fetchWithTimeout(false, callType, input)
   const content = apiResponse.choices?.[0]?.message?.content
   return parseJsonContent(content)
 }
 
-async function requestStreamingJson(callType, input) {
+async function requestStreamingJson(callType, input, onFieldDelta = () => {}, streamField = 'reasoning') {
   const response = await fetchWithTimeout(true, callType, input)
   if (!response.body) throw new Error('ReadableStream body is not available')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
+  const extractor = createFieldValueExtractor(streamField)
   let buffer = ''
   let content = ''
 
@@ -137,7 +242,11 @@ async function requestStreamingJson(callType, input) {
 
     lines.forEach((line) => {
       const chunk = parseSseLine(line)
-      if (chunk) content += chunk
+      if (!chunk) return
+
+      content += chunk
+      const delta = extractor.push(chunk)
+      if (delta) onFieldDelta(delta)
     })
   }
 
@@ -148,6 +257,8 @@ async function requestStreamingJson(callType, input) {
     .filter(Boolean)
     .forEach((chunk) => {
       content += chunk
+      const delta = extractor.push(chunk)
+      if (delta) onFieldDelta(delta)
     })
 
   return parseJsonContent(content)
@@ -186,6 +297,20 @@ async function fetchWithTimeout(stream, callType, input) {
   }
 }
 
+function replayFallbackIfNeeded(callType, input, options) {
+  const fallback = getFallbackPlan(callType, input)
+  const shouldReplay =
+    options.stream && options.onFieldDelta && !(options.hasEmittedFieldDelta && options.hasEmittedFieldDelta())
+
+  if (shouldReplay) {
+    return streamText(fallback[options.streamField] ?? fallback.reasoning ?? '', options.onFieldDelta).then(
+      () => fallback,
+    )
+  }
+
+  return fallback
+}
+
 function parseSseLine(line) {
   const trimmed = line.trim()
   if (!trimmed.startsWith('data:')) return ''
@@ -217,8 +342,8 @@ function parseJsonContent(content) {
 function buildUserPrompt(callType, input) {
   return [
     `callType: ${callType}`,
-    '请只返回 JSON 对象，不要使用 Markdown 代码块。',
-    '输入：',
+    'Return only the output JSON object for this call type.',
+    'Input:',
     JSON.stringify(input),
   ].join('\n')
 }
@@ -271,6 +396,25 @@ function appendSystemLog(text) {
     text,
     isStreaming: false,
   })
+}
+
+function decodeEscapedChar(char) {
+  const escapes = {
+    '"': '"',
+    '\\': '\\',
+    '/': '/',
+    b: '\b',
+    f: '\f',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+  }
+
+  return escapes[char] ?? char
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function randomInt(min, max) {
