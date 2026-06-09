@@ -87,7 +87,7 @@ export const ExecutorAI = {
 
       if (!validation.valid) {
         console.warn(`[ExecutorAI] ${callType} schema validation failed`, validation.errors)
-        appendSystemLog('[auto fallback] AI response failed schema validation; using fallback plan.')
+        appendSystemLog('[自动降级] AI 响应格式不符合 schema，使用保底策略')
         return replayFallbackIfNeeded(callType, input, options)
       }
 
@@ -95,7 +95,7 @@ export const ExecutorAI = {
       return response
     } catch (error) {
       console.warn(`[ExecutorAI] ${callType} request failed`, error)
-      appendSystemLog('[auto fallback] AI response timed out or failed; using fallback plan.')
+      appendSystemLog('[自动降级] AI 响应超时，使用保底策略')
       return replayFallbackIfNeeded(callType, input, options)
     }
   },
