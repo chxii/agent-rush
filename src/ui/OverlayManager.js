@@ -2,6 +2,47 @@ import { SCENES } from '../config/scenes.js'
 import { AGENT_GUIDE, BOT_GUIDE, RULES_PAGES } from '../config/guideContent.js'
 
 export const OverlayManager = {
+  showStartMenu(gameState, onStart) {
+    const agentRows = gameState.unlockedAgents
+      .map((agentId) => {
+        const guide = AGENT_GUIDE[agentId]
+        return `<span>${guide?.name ?? agentId} Lv.${gameState.agentLevels[agentId] ?? 1}</span>`
+      })
+      .join('')
+    const seenBotCount = gameState.seenBots.length
+
+    const panel = showOverlay(
+      'Agent Rush',
+      `
+        <div class="start-menu">
+          <p class="overlay-copy">指挥一支 MEV Agent 战队，在 20 层链上战场中发现机会、分配 Gas、击退对手 Bot。</p>
+          <div class="start-progress">
+            <div>
+              <strong>已解锁 Agent</strong>
+              <div class="start-chip-list">${agentRows || '<span>Searcher Lv.1</span>'}</div>
+            </div>
+            <div>
+              <strong>已遭遇对手</strong>
+              <span>${seenBotCount} / ${Object.keys(BOT_GUIDE).length}</span>
+            </div>
+          </div>
+          <div class="start-actions">
+            <button id="start-game" class="primary-button" type="button">开始游戏</button>
+            <button id="start-codex" class="secondary-button" type="button">图鉴</button>
+          </div>
+        </div>
+      `,
+    )
+
+    panel.querySelector('#start-game').addEventListener('click', () => {
+      this.hideAll()
+      onStart()
+    })
+    panel.querySelector('#start-codex').addEventListener('click', () => {
+      this.showCodex(() => this.showStartMenu(gameState, onStart))
+    })
+  },
+
   showWelcome(onDone) {
     let pageIndex = 0
 
@@ -51,7 +92,7 @@ export const OverlayManager = {
     }
 
     const panel = showOverlay(
-      `⚠ 新对手出现：${bot.name}`,
+      `新对手出现：${bot.name}`,
       `
         <div class="guide-entry bot-intro">
           <p><strong>出现层数</strong><span>${bot.layers}</span></p>
@@ -164,11 +205,11 @@ export const OverlayManager = {
     })
   },
 
-  showCodex() {
+  showCodex(onClose = () => {}) {
     let activeTab = 'rules'
 
     const render = () => {
-      const panel = showOverlay(
+      const panel = showCodexOverlay(
         '图鉴',
         `
           <div class="guide-tabs">
@@ -187,7 +228,10 @@ export const OverlayManager = {
           render()
         })
       })
-      panel.querySelector('#codex-close').addEventListener('click', () => this.hideAll())
+      panel.querySelector('#codex-close').addEventListener('click', () => {
+        this.hideCodex()
+        onClose()
+      })
     }
 
     render()
@@ -212,6 +256,10 @@ export const OverlayManager = {
   hideAll() {
     document.querySelectorAll('.overlay-layer.visible').forEach((panel) => panel.classList.remove('visible'))
   },
+
+  hideCodex() {
+    document.querySelectorAll('.codex-layer.visible').forEach((panel) => panel.classList.remove('visible'))
+  },
 }
 
 function showOverlay(title, body) {
@@ -219,6 +267,18 @@ function showOverlay(title, body) {
   OverlayManager.hideAll()
   panel.innerHTML = `
     <div class="overlay-dialog">
+      <h2>${title}</h2>
+      ${body}
+    </div>
+  `
+  panel.classList.add('visible')
+  return panel
+}
+
+function showCodexOverlay(title, body) {
+  const panel = getCodexOverlay()
+  panel.innerHTML = `
+    <div class="overlay-dialog codex-dialog">
       <h2>${title}</h2>
       ${body}
     </div>
@@ -238,6 +298,17 @@ function getOverlay() {
     panel = document.createElement('section')
     panel.id = 'overlay-layer'
     panel.className = 'overlay-layer'
+    document.body.append(panel)
+  }
+  return panel
+}
+
+function getCodexOverlay() {
+  let panel = document.querySelector('#codex-layer')
+  if (!panel) {
+    panel = document.createElement('section')
+    panel.id = 'codex-layer'
+    panel.className = 'codex-layer'
     document.body.append(panel)
   }
   return panel

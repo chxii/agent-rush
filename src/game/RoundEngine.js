@@ -9,9 +9,9 @@ import { UIRenderer } from '../ui/UIRenderer.js'
 import { ExecutionEngine } from './ExecutionEngine.js'
 import { ProgressionEngine } from './ProgressionEngine.js'
 
-const DEFAULT_SCAN_MS = 15000
 const DEFAULT_PLAY_MS = 25000
-const REVEAL_INTERVAL_MS = 300
+const REVEAL_INTERVAL_MS = 900
+const SCAN_BUFFER_MS = 900
 
 export const RoundEngine = {
   gameState: null,
@@ -23,6 +23,10 @@ export const RoundEngine = {
   _timerId: null,
   _intervalId: null,
   _revealTimers: [],
+  _timerEndAt: 0,
+  _timerRemainingMs: 0,
+  _timerDone: null,
+  _paused: false,
 
   startRound(gameState, roundConfig = {}) {
     this.gameState = gameState
@@ -36,6 +40,9 @@ export const RoundEngine = {
 
   transition(newPhase) {
     this.clearTimers()
+    this._paused = false
+    this._timerRemainingMs = 0
+    this._timerDone = null
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
     UIRenderer.renderHeader(this.gameState)
@@ -56,8 +63,10 @@ export const RoundEngine = {
 
     const activeBotType = EnemyBotAI.getActiveBot(this.gameState.currentLayer)
     if (activeBotType && !this.gameState.hasSeenBot(activeBotType)) {
-      this.gameState.markBotSeen(activeBotType)
-      OverlayManager.showBotIntro(activeBotType, () => this.runScan(activeBotType))
+      OverlayManager.showBotIntro(activeBotType, () => {
+        this.gameState.markBotSeen(activeBotType)
+        this.runScan(activeBotType)
+      })
       return
     }
 
@@ -83,18 +92,22 @@ export const RoundEngine = {
 
     this.currentHand.forEach((_, index) => {
       const timerId = window.setTimeout(() => {
-        UIRenderer.renderHand(this.currentHand.slice(0, index + 1), [...this.selectedIds], { phase: 'scan' })
+        UIRenderer.renderHand(this.currentHand.slice(0, index + 1), [...this.selectedIds], {
+          phase: 'scan',
+          enteringId: this.currentHand[index]?.id,
+        })
       }, index * REVEAL_INTERVAL_MS)
       this._revealTimers.push(timerId)
     })
 
-    this._timerId = window.setTimeout(() => this.transition('play'), this.roundConfig.scanMs ?? DEFAULT_SCAN_MS)
+    const scanMs = this.roundConfig.scanMs ?? this.currentHand.length * REVEAL_INTERVAL_MS + SCAN_BUFFER_MS
+    this.startPhaseTimer(scanMs, () => this.transition('play'), 'Scanning')
   },
 
   startPlay() {
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'play' })
     UIRenderer.setPlayEnabled(this.selectedIds.size > 0)
-    this.startCountdown(this.roundConfig.playMs ?? DEFAULT_PLAY_MS, () => this.transition('execute'))
+    this.startPhaseTimer(this.roundConfig.playMs ?? DEFAULT_PLAY_MS, () => this.transition('execute'))
   },
 
   async startExecute(selectedCards = this.getSelectedCards(), gasAllocations = this.getGasAllocations(selectedCards)) {
@@ -144,6 +157,31 @@ export const RoundEngine = {
     this.transition('execute')
   },
 
+  pauseTimers() {
+    if (this._paused || !this.isPausablePhase() || !this._timerDone || !this._timerEndAt) return
+
+    this._paused = true
+    this._timerRemainingMs = Math.max(0, this._timerEndAt - Date.now())
+    this.clearRunningTimers()
+
+    if (this.gameState.phase === 'scan') {
+      UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'scan' })
+    }
+
+    UIRenderer.setTimerText('已暂停')
+  },
+
+  resumeTimers() {
+    if (!this._paused || !this.isPausablePhase() || !this._timerDone) return
+
+    this._paused = false
+    this.startPhaseTimer(this._timerRemainingMs, this._timerDone, this.gameState.phase === 'scan' ? 'Scanning' : null)
+  },
+
+  isPausablePhase() {
+    return this.gameState?.phase === 'scan' || this.gameState?.phase === 'play'
+  },
+
   getSelectedCards() {
     return this.currentHand.filter((card) => this.selectedIds.has(card.id))
   },
@@ -171,7 +209,7 @@ export const RoundEngine = {
     this.gameState.activeAgents = this.gameState.unlockedAgents.slice(0, layerConfig.slots)
     this.gameState.saveProgress()
 
-    this.startRound(this.gameState, this.roundConfig)
+    ProgressionEngine.startRun(this.gameState)
   },
 
   injectPhantomSteal() {
@@ -194,12 +232,16 @@ export const RoundEngine = {
     })
   },
 
-  startCountdown(durationMs, onDone) {
-    const endAt = Date.now() + durationMs
+  startPhaseTimer(durationMs, onDone, label = null) {
+    this.clearRunningTimers()
+    this._timerDone = onDone
+    this._timerRemainingMs = durationMs
+    this._timerEndAt = Date.now() + durationMs
+
     const update = () => {
-      const remainingMs = Math.max(0, endAt - Date.now())
-      UIRenderer.setTimerText(`${Math.ceil(remainingMs / 1000)}s`)
-      if (remainingMs <= 0) {
+      const remainingMs = Math.max(0, this._timerEndAt - Date.now())
+      UIRenderer.setTimerText(label ?? `${Math.ceil(remainingMs / 1000)}s`)
+      if (remainingMs <= 0 && this._intervalId) {
         window.clearInterval(this._intervalId)
         this._intervalId = null
       }
@@ -210,13 +252,21 @@ export const RoundEngine = {
     this._timerId = window.setTimeout(onDone, durationMs)
   },
 
-  clearTimers() {
+  clearRunningTimers() {
     if (this._timerId) window.clearTimeout(this._timerId)
     if (this._intervalId) window.clearInterval(this._intervalId)
     this._revealTimers.forEach((timerId) => window.clearTimeout(timerId))
     this._timerId = null
     this._intervalId = null
     this._revealTimers = []
+  },
+
+  clearTimers() {
+    this.clearRunningTimers()
+    this._timerEndAt = 0
+    this._timerRemainingMs = 0
+    this._timerDone = null
+    this._paused = false
   },
 }
 

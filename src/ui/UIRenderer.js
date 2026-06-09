@@ -83,13 +83,14 @@ export const UIRenderer = {
   renderHand(cards, selectedIds = [], options = {}) {
     const selectedSet = new Set(selectedIds)
     const phase = options.phase ?? 'play'
+    const enteringId = options.enteringId
     const isPlayable = phase === 'play'
 
     elements.handArea.innerHTML = cards
       .map((card) => {
         const riskPercent = Math.round(card.displayedRisk * 100)
         return `
-          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${card.rarity}" data-card-id="${card.id}" type="button" ${isPlayable ? '' : 'disabled'}>
+          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${card.id === enteringId ? 'entering' : ''} ${card.rarity}" data-card-id="${card.id}" type="button" ${isPlayable ? '' : 'disabled'}>
             <span class="card-top">
               <span>${typeLabel(card.type)}</span>
               <span class="rarity">${card.rarity}</span>

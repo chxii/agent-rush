@@ -71,17 +71,24 @@
 
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
       UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
-      document.querySelector('#codex-button').addEventListener('click', () => OverlayManager.showCodex())
+      document.querySelector('#codex-button').addEventListener('click', () => {
+        RoundEngine.pauseTimers()
+        OverlayManager.showCodex(() => RoundEngine.resumeTimers())
+      })
 
-      const startGame = () => RoundEngine.startRound(GameState)
-      if (!GameState.tutorialSeen) {
-        OverlayManager.showWelcome(() => {
-          GameState.markTutorialSeen()
-          startGame()
-        })
-      } else {
-        startGame()
+      const beginRun = () => {
+        if (!GameState.tutorialSeen) {
+          OverlayManager.showWelcome(() => {
+            GameState.markTutorialSeen()
+            ProgressionEngine.startRun(GameState)
+          })
+          return
+        }
+
+        ProgressionEngine.startRun(GameState)
       }
+
+      OverlayManager.showStartMenu(GameState, beginRun)
 
       window.GameState = GameState
       window.RoundEngine = RoundEngine

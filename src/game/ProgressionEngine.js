@@ -9,6 +9,12 @@ export const ProgressionEngine = {
     roundStarter = callback
   },
 
+  startRun(gameState) {
+    gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
+    gameState.gasPool = Math.min(gameState.gasPool || gameState.gasPoolMax, gameState.gasPoolMax)
+    this.showSceneSelection(gameState)
+  },
+
   afterRound(roundResult, gameState) {
     gameState.applyRoundResult(roundResult.netProfit)
     EnemyBotAI.updateGenesisHistory(gameState, roundResult.cards)
@@ -51,12 +57,6 @@ export const ProgressionEngine = {
     gameState.currentLayer = Math.min(completedLayer + 1, 20)
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = gameState.gasPoolMax
-
-    if (gameState.currentLayer <= 3) {
-      if (roundStarter) roundStarter(gameState)
-      return
-    }
-
     this.showSceneSelection(gameState)
   },
 
@@ -112,5 +112,5 @@ function restartGame(gameState) {
   gameState.cumulativeProfit = 0
   gameState.consecutiveLoss = 0
   OverlayManager.hideAll()
-  if (roundStarter) roundStarter(gameState)
+  ProgressionEngine.startRun(gameState)
 }
