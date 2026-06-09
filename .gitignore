@@ -25,3 +25,6 @@ npm-debug.log*
 # 构建产物（如果以后加了构建工具）
 dist/
 build/
+
+# Local web research cache
+.firecrawl/

@@ -344,6 +344,23 @@ h2 {
   margin-right: auto;
 }
 
+.debug-panel {
+  min-height: 54px;
+  padding: 10px;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--warn);
+  background: rgba(245, 184, 75, 0.08);
+}
+
+.debug-panel button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  cursor: pointer;
+}
+
 .primary-button,
 .secondary-button {
   min-width: 104px;

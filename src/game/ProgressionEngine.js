@@ -1,11 +1,6 @@
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
+import { LAYER_CONFIG } from '../config/scenes.js'
 import { OverlayManager } from '../ui/OverlayManager.js'
-
-const UNLOCK_BY_LAYER = {
-  4: 'riskAnalyzer',
-  8: 'executor',
-  13: 'strategist',
-}
 
 let roundStarter = null
 
@@ -41,7 +36,7 @@ export const ProgressionEngine = {
   },
 
   unlockThenAdvance(gameState, completedLayer) {
-    const unlockAgentId = UNLOCK_BY_LAYER[completedLayer]
+    const unlockAgentId = getLayerConfig(completedLayer).unlocks
 
     if (unlockAgentId && !gameState.unlockedAgents.includes(unlockAgentId)) {
       gameState.unlockAgent(unlockAgentId)
@@ -66,7 +61,8 @@ export const ProgressionEngine = {
   },
 
   showSceneSelection(gameState) {
-    const availableScenes = sceneChoicesForLayer(gameState.currentLayer)
+    const layerConfig = getLayerConfig(gameState.currentLayer)
+    const availableScenes = layerConfig.scenes ?? [layerConfig.scene]
     if (availableScenes.length <= 1) {
       gameState.currentScene = availableScenes[0]
       this.showAgentRoster(gameState)
@@ -80,7 +76,7 @@ export const ProgressionEngine = {
   },
 
   showAgentRoster(gameState) {
-    const slots = slotsForLayer(gameState.currentLayer)
+    const slots = getLayerConfig(gameState.currentLayer).slots
     OverlayManager.showAgentRoster(gameState.unlockedAgents, gameState.agentLevels, slots, (activeAgents) => {
       gameState.activeAgents = activeAgents.slice(0, slots)
       gameState.saveProgress()
@@ -92,29 +88,19 @@ export const ProgressionEngine = {
     return {
       layer: gameState.currentLayer,
       scene: gameState.currentScene,
-      slots: slotsForLayer(gameState.currentLayer),
+      slots: getLayerConfig(gameState.currentLayer).slots,
       bot: EnemyBotAI.getActiveBot(gameState.currentLayer),
       isBoss: isBossLayer(gameState.currentLayer),
     }
   },
 }
 
-function sceneChoicesForLayer(layer) {
-  if (layer <= 4) return ['dex_arb']
-  if (layer <= 7) return ['dex_arb', 'new_token']
-  if (layer <= 12) return ['nft_market', 'lending']
-  if (layer <= 17) return ['nft_market', 'lending', 'new_token']
-  return ['dex_arb', 'nft_market', 'lending', 'new_token']
-}
-
-function slotsForLayer(layer) {
-  if (layer <= 3) return 1
-  if (layer <= 7) return 2
-  return 3
+function getLayerConfig(layer) {
+  return LAYER_CONFIG[layer] ?? LAYER_CONFIG[20]
 }
 
 function isBossLayer(layer) {
-  return layer === 4 || layer === 8 || layer === 13 || layer === 16 || layer === 20
+  return getLayerConfig(layer).isBoss
 }
 
 function restartGame(gameState) {

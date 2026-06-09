@@ -1,46 +1,31 @@
 import { CARD_TYPES, COMPETITION_BY_RARITY, RARITY } from '../config/cards.js'
 import { SCENES } from '../config/scenes.js'
 
+let forceScamNextHand = false
+
 export function generateHand(scene, activeAgents, agentLevels) {
   const activeAgentSet = new Set(activeAgents)
-  const cards = runSearcher(scene, agentLevels.searcher ?? 1)
+  let cards = runSearcher(scene, agentLevels.searcher ?? 1)
+
+  if (forceScamNextHand) {
+    cards = [createScamCard(scene), ...cards.slice(1)]
+    forceScamNextHand = false
+  }
 
   return activeAgentSet.has('riskAnalyzer')
     ? cards.map((card) => runRiskAnalyzer(card, agentLevels.riskAnalyzer ?? 1))
     : cards
 }
 
+export function injectScamCardNextHand() {
+  forceScamNextHand = true
+}
+
 export function runSearcher(scene, level) {
   const sceneConfig = SCENES[scene] ?? SCENES.dex_arb
   const cardCount = clampInt(2 + level, 3, 5)
 
-  return Array.from({ length: cardCount }, () => {
-    const rarity = weightedPick(sceneConfig.rarityWeights)
-    const type = randomItem(CARD_TYPES)
-    const isScam = Math.random() < sceneConfig.scamRate
-    const rarityConfig = RARITY[rarity]
-    const trueRisk = isScam ? randomFloat(0.82, 0.97) : randomFloat(...rarityConfig.riskRange)
-    const displayedRisk = isScam ? randomFloat(0.03, 0.25) : trueRisk
-    // scam 牌用虚高利润作诱饵：展示给玩家的 expectedProfit 拉高 1.5~2.5 倍
-    const baseProfit = randomFloat(...rarityConfig.profitRange)
-    const expectedProfit = isScam ? baseProfit * randomFloat(1.5, 2.5) : baseProfit
-
-    return {
-      id: `${type}_${Math.random().toString(36).slice(2, 10)}`,
-      type,
-      rarity,
-      isScam,
-      expectedProfit: round(expectedProfit),
-      displayedRisk: round(displayedRisk),
-      trueRisk: round(trueRisk),
-      gasCost: Math.round(randomFloat(...rarityConfig.gasRange)),
-      timeWindowSec: Math.round(randomFloat(10, 50)),
-      competitionLevel: Math.round(randomFloat(...COMPETITION_BY_RARITY[rarity])),
-      riskReason: isScam ? '低流动性伪装成高收益机会' : riskReasonForType(type),
-      status: 'pending',
-      actualProfit: 0,
-    }
-  })
+  return Array.from({ length: cardCount }, () => createCard(sceneConfig))
 }
 
 export function runRiskAnalyzer(card, level) {
@@ -78,6 +63,47 @@ export function runStrategist(cards, gasPool, activeBotType) {
       activeBotType === 'Phantom' || activeBotType === 'Phantom+'
         ? 'Phantom 系 bot 偏好 NFT，已降低 nft_snipe 推荐权重'
         : '按收益、风险和 Gas 成本计算 EV 排序',
+  }
+}
+
+function createCard(sceneConfig) {
+  const rarity = weightedPick(sceneConfig.rarityWeights)
+  const type = randomItem(CARD_TYPES)
+  const isScam = Math.random() < sceneConfig.scamRate
+  const rarityConfig = RARITY[rarity]
+  const trueRisk = isScam ? randomFloat(0.82, 0.97) : randomFloat(...rarityConfig.riskRange)
+  const displayedRisk = isScam ? randomFloat(0.03, 0.25) : trueRisk
+  const baseProfit = randomFloat(...rarityConfig.profitRange)
+  const expectedProfit = isScam ? baseProfit * randomFloat(1.5, 2.5) : baseProfit
+
+  return {
+    id: `${type}_${Math.random().toString(36).slice(2, 10)}`,
+    type,
+    rarity,
+    isScam,
+    expectedProfit: round(expectedProfit),
+    displayedRisk: round(displayedRisk),
+    trueRisk: round(trueRisk),
+    gasCost: Math.round(randomFloat(...rarityConfig.gasRange)),
+    timeWindowSec: Math.round(randomFloat(10, 50)),
+    competitionLevel: Math.round(randomFloat(...COMPETITION_BY_RARITY[rarity])),
+    riskReason: isScam ? '低流动性伪装成高收益机会' : riskReasonForType(type),
+    status: 'pending',
+    actualProfit: 0,
+  }
+}
+
+function createScamCard(scene) {
+  const sceneConfig = SCENES[scene] ?? SCENES.dex_arb
+  const card = createCard({ ...sceneConfig, scamRate: 1 })
+  return {
+    ...card,
+    id: `scam_${Math.random().toString(36).slice(2, 10)}`,
+    isScam: true,
+    expectedProfit: Math.max(card.expectedProfit, 2.4),
+    displayedRisk: 0.08,
+    trueRisk: 0.94,
+    riskReason: '低流动性伪装成高收益机会',
   }
 }
 
