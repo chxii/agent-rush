@@ -46,6 +46,13 @@
         <button id="skip-button" class="secondary-button" type="button">Skip</button>
         <button id="play-button" class="primary-button" type="button" disabled>Play</button>
       </section>
+
+      <section id="debug-panel" class="debug-panel" style="display:none">
+        <button type="button" onclick="jumpToLayer(10)">跳到层 10 (Demo点)</button>
+        <button type="button" onclick="jumpToLayer(18)">跳到层 18 (Demo点)</button>
+        <button type="button" onclick="injectPhantomSteal()">触发Phantom抢占</button>
+        <button type="button" onclick="injectScamCard()">注入骗局牌</button>
+      </section>
     </main>
 
     <script type="module">
@@ -67,6 +74,13 @@
       window.GameState = GameState
       window.RoundEngine = RoundEngine
       window.ProgressionEngine = ProgressionEngine
+      window.jumpToLayer = (layer) => RoundEngine.jumpToLayer(layer)
+      window.injectPhantomSteal = () => RoundEngine.injectPhantomSteal()
+      window.injectScamCard = () => RoundEngine.injectScamCard()
+
+      if (new URLSearchParams(window.location.search).get('debug') === '1') {
+        document.querySelector('#debug-panel').style.display = 'flex'
+      }
     </script>
   </body>
 </html>

@@ -1,6 +1,7 @@
-import { generateHand } from '../core/CardGenerator.js'
+import { generateHand, injectScamCardNextHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { ExecutorAI } from '../ai/ExecutorAI.js'
+import { LAYER_CONFIG } from '../config/scenes.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
 import { UIRenderer } from '../ui/UIRenderer.js'
@@ -58,6 +59,8 @@ export const RoundEngine = {
       this.gameState.activeAgents,
       this.gameState.agentLevels,
     )
+    const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
+    if (fixedCards) this.currentHand = this.currentHand.slice(0, fixedCards)
 
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
@@ -141,6 +144,44 @@ export const RoundEngine = {
     return this.gameState?.activeAgents.includes('executor')
   },
 
+  jumpToLayer(layer) {
+    if (!this.gameState) return
+
+    const targetLayer = Math.max(1, Math.min(20, Number(layer) || 1))
+    const layerConfig = LAYER_CONFIG[targetLayer] ?? LAYER_CONFIG[20]
+    this.clearTimers()
+
+    this.gameState.currentLayer = targetLayer
+    this.gameState.currentScene = layerConfig.scene ?? layerConfig.scenes?.[0] ?? 'dex_arb'
+    this.gameState.gasPoolMax = this.gameState.gasPoolMaxForStage(targetLayer)
+    this.gameState.gasPool = this.gameState.gasPoolMax
+    unlockAgentsForLayer(this.gameState, targetLayer)
+    this.gameState.activeAgents = this.gameState.unlockedAgents.slice(0, layerConfig.slots)
+    this.gameState.saveProgress()
+
+    this.startRound(this.gameState, this.roundConfig)
+  },
+
+  injectPhantomSteal() {
+    EnemyBotAI.forceNextSteal()
+    ThoughtChainPanel.appendLog({
+      timestampMs: Date.now(),
+      source: 'system',
+      text: '[Debug] 下一次 Bot 竞争将强制抢占',
+      isStreaming: false,
+    })
+  },
+
+  injectScamCard() {
+    injectScamCardNextHand()
+    ThoughtChainPanel.appendLog({
+      timestampMs: Date.now(),
+      source: 'system',
+      text: '[Debug] 下一轮扫描将注入一张骗局牌',
+      isStreaming: false,
+    })
+  },
+
   startCountdown(durationMs, onDone) {
     const endAt = Date.now() + durationMs
     const update = () => {
@@ -165,4 +206,12 @@ export const RoundEngine = {
     this._intervalId = null
     this._revealTimers = []
   },
+}
+
+function unlockAgentsForLayer(gameState, layer) {
+  Object.entries(LAYER_CONFIG).forEach(([layerNumber, config]) => {
+    if (Number(layerNumber) <= layer && config.unlocks) {
+      gameState.unlockAgent(config.unlocks)
+    }
+  })
 }

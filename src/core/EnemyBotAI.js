@@ -1,7 +1,13 @@
 import { BOTS } from '../config/bots.js'
+import { LAYER_CONFIG } from '../config/scenes.js'
+
+let forceStealNextCompetition = false
 
 export const EnemyBotAI = {
   getActiveBot(layer) {
+    const configuredBot = LAYER_CONFIG[layer]?.bot
+    if (configuredBot !== undefined) return configuredBot
+
     const entry = Object.entries(BOTS).find(([, bot]) => layer >= bot.layers[0] && layer <= bot.layers[1])
     return entry?.[0] ?? null
   },
@@ -9,6 +15,11 @@ export const EnemyBotAI = {
   compete(card, gameState) {
     const botName = this.getActiveBot(gameState.currentLayer)
     if (!botName) return { stolen: false, botName: null }
+
+    if (forceStealNextCompetition) {
+      forceStealNextCompetition = false
+      return { stolen: true, botName, winProb: 1 }
+    }
 
     const bot = BOTS[botName]
     let winProb = bot.baseWinProb * (1 + card.competitionLevel * 0.1)
@@ -22,6 +33,10 @@ export const EnemyBotAI = {
       botName,
       winProb,
     }
+  },
+
+  forceNextSteal() {
+    forceStealNextCompetition = true
   },
 
   updateGenesisHistory(gameState, roundCards) {
