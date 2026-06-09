@@ -128,6 +128,13 @@ export const UIRenderer = {
     if (elements.skipButton) elements.skipButton.disabled = !isPlay
   },
 
+  setExecutionMode(mode) {
+    document.body.dataset.executionMode = mode
+    if (elements.logPanel) {
+      elements.logPanel.dataset.mode = mode
+    }
+  },
+
   onCardClick(callback) {
     cardClickCallback = callback
   },

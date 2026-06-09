@@ -1,5 +1,6 @@
 import { generateHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
+import { ExecutorAI } from '../ai/ExecutorAI.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
 import { UIRenderer } from '../ui/UIRenderer.js'
@@ -46,6 +47,7 @@ export const RoundEngine = {
   startScan() {
     ThoughtChainPanel.clear()
     this.selectedIds.clear()
+    UIRenderer.setExecutionMode('rigid')
     UIRenderer.renderHand([], [])
     UIRenderer.setPlayEnabled(false)
     UIRenderer.setTimerText('Scanning')
@@ -84,8 +86,11 @@ export const RoundEngine = {
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'execute' })
     UIRenderer.setPlayEnabled(false)
     UIRenderer.setTimerText('Executing')
+    UIRenderer.setExecutionMode(this.isAdaptiveMode() ? 'adaptive' : 'rigid')
 
-    this.roundResult = await ExecutionEngine.runRigidMode(selectedCards, gasAllocations, this.gameState)
+    this.roundResult = this.isAdaptiveMode()
+      ? await ExecutionEngine.runAdaptiveMode(selectedCards, this.gameState, ExecutorAI)
+      : await ExecutionEngine.runRigidMode(selectedCards, gasAllocations, this.gameState)
     this.transition('settle')
   },
 
@@ -130,6 +135,10 @@ export const RoundEngine = {
 
   getGasAllocations(cards) {
     return cards.map((card) => ({ cardId: card.id, gas: card.gasCost }))
+  },
+
+  isAdaptiveMode() {
+    return this.gameState?.activeAgents.includes('executor')
   },
 
   startCountdown(durationMs, onDone) {
