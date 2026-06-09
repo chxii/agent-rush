@@ -79,6 +79,10 @@ h1 {
   line-height: 0.95;
 }
 
+.codex-button {
+  margin-top: 14px;
+}
+
 h2 {
   font-size: 16px;
 }
@@ -460,6 +464,101 @@ h2 {
 .choice-card span,
 .overlay-copy {
   color: var(--muted);
+}
+
+.guide-copy {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.guide-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.guide-pager > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.guide-pager-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.guide-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.guide-tabs button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.guide-tabs button.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.guide-content,
+.guide-section {
+  display: grid;
+  gap: 12px;
+}
+
+.guide-section {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.guide-section h3,
+.guide-entry h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.guide-entry {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.guide-entry p {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.guide-entry strong {
+  color: var(--text);
+}
+
+.guide-entry span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.bot-intro {
+  margin: 14px 0;
+}
+
+.threat-text {
+  color: var(--warn);
 }
 
 @keyframes cursor-blink {

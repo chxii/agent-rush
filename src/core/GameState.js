@@ -13,6 +13,8 @@ export const GameState = {
   consecutiveLoss: 0,
   phase: 'idle',
   genesisHistory: { lastTwoRounds: [], boostedType: null },
+  tutorialSeen: false,
+  seenBots: [],
 
   init() {
     const progress = this.loadProgress()
@@ -20,6 +22,8 @@ export const GameState = {
     if (progress) {
       this.unlockedAgents = mergeUnique(this.unlockedAgents, progress.unlockedAgents)
       this.agentLevels = { ...this.agentLevels, ...progress.agentLevels }
+      this.tutorialSeen = progress.tutorialSeen
+      this.seenBots = progress.seenBots
       this.activeAgents = this.activeAgents.filter((agentId) => this.unlockedAgents.includes(agentId))
     }
 
@@ -35,6 +39,8 @@ export const GameState = {
         schemaVersion: SCHEMA_VERSION,
         unlockedAgents: this.unlockedAgents,
         agentLevels: this.agentLevels,
+        tutorialSeen: this.tutorialSeen,
+        seenBots: this.seenBots,
       }),
     )
   },
@@ -50,6 +56,8 @@ export const GameState = {
       return {
         unlockedAgents: Array.isArray(parsed.unlockedAgents) ? parsed.unlockedAgents : [],
         agentLevels: isRecord(parsed.agentLevels) ? parsed.agentLevels : {},
+        tutorialSeen: parsed.tutorialSeen === true,
+        seenBots: Array.isArray(parsed.seenBots) ? parsed.seenBots : [],
       }
     } catch (error) {
       console.warn('[GameState] Failed to load progress', error)
@@ -95,6 +103,22 @@ export const GameState = {
     const currentLevel = this.agentLevels[agentId] ?? 1
     this.agentLevels[agentId] = Math.min(3, currentLevel + 1)
     this.saveProgress()
+  },
+
+  markTutorialSeen() {
+    this.tutorialSeen = true
+    this.saveProgress()
+  },
+
+  hasSeenBot(botName) {
+    return this.seenBots.includes(botName)
+  },
+
+  markBotSeen(botName) {
+    if (!this.seenBots.includes(botName)) {
+      this.seenBots.push(botName)
+      this.saveProgress()
+    }
   },
 }
 

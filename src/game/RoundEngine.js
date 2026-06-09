@@ -4,6 +4,7 @@ import { ExecutorAI } from '../ai/ExecutorAI.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
+import { OverlayManager } from '../ui/OverlayManager.js'
 import { UIRenderer } from '../ui/UIRenderer.js'
 import { ExecutionEngine } from './ExecutionEngine.js'
 import { ProgressionEngine } from './ProgressionEngine.js'
@@ -54,11 +55,22 @@ export const RoundEngine = {
     UIRenderer.setTimerText('Scanning')
 
     const activeBotType = EnemyBotAI.getActiveBot(this.gameState.currentLayer)
+    if (activeBotType && !this.gameState.hasSeenBot(activeBotType)) {
+      this.gameState.markBotSeen(activeBotType)
+      OverlayManager.showBotIntro(activeBotType, () => this.runScan(activeBotType))
+      return
+    }
+
+    this.runScan(activeBotType)
+  },
+
+  runScan(activeBotType) {
     this.currentHand = generateHand(
       this.gameState.currentScene,
       this.gameState.activeAgents,
       this.gameState.agentLevels,
     )
+
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
     if (fixedCards) this.currentHand = this.currentHand.slice(0, fixedCards)
 
