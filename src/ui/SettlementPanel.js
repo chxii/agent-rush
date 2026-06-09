@@ -2,20 +2,20 @@ let continueCallback = null
 let rowTimerIds = []
 
 export const SettlementPanel = {
-  show(roundResult, onContinue) {
-    continueCallback = onContinue
+  show(roundResult, gameStateOrCallback, maybeOnContinue) {
+    const gameState = typeof gameStateOrCallback === 'function' ? null : gameStateOrCallback
+    continueCallback = typeof gameStateOrCallback === 'function' ? gameStateOrCallback : maybeOnContinue
+
     const panel = getPanel()
     clearRowTimers()
     panel.innerHTML = `
       <div class="settlement-dialog">
-        <h2>Round Settlement</h2>
+        <h2>回合结算</h2>
+        ${formatSummary(roundResult)}
         <div class="settlement-rows"></div>
         ${formatHighlights(roundResult.decisionHighlights)}
-        <div class="settlement-total">
-          <span>Net ${formatSignedEth(roundResult.netProfit)}</span>
-          <span>Gas ${roundResult.gasUsed} Gwei</span>
-        </div>
-        <button id="settlement-continue" class="primary-button" type="button">Continue</button>
+        ${formatProgress(roundResult, gameState)}
+        <button id="settlement-continue" class="primary-button" type="button">继续</button>
       </div>
     `
     panel.classList.add('visible')
@@ -25,10 +25,10 @@ export const SettlementPanel = {
     })
 
     const rowContainer = panel.querySelector('.settlement-rows')
-    roundResult.cards.forEach((card, index) => {
+    ;(roundResult.cards ?? []).forEach((card, index) => {
       const timerId = window.setTimeout(() => {
         rowContainer.insertAdjacentHTML('beforeend', this.formatLine(card))
-      }, index * 500)
+      }, index * 450)
       rowTimerIds.push(timerId)
     })
   },
@@ -41,10 +41,14 @@ export const SettlementPanel = {
 
   formatLine(card) {
     const isSuccess = card.status === 'success'
+    const reason = card.resultReason || reasonFromEvents(card) || statusLabel(card.status)
     return `
       <div class="settlement-line ${isSuccess ? 'success' : 'failure'}">
-        <span>${card.id}</span>
-        <span>${card.status}</span>
+        <span>
+          <strong>${typeLabel(card.type)} · ${card.id}</strong>
+          <small>${reason}</small>
+        </span>
+        <span>${statusLabel(card.status)}</span>
         <strong>${formatSignedEth(card.actualProfit)}</strong>
       </div>
     `
@@ -67,8 +71,52 @@ function clearRowTimers() {
   rowTimerIds = []
 }
 
-function formatSignedEth(value) {
-  return `${value >= 0 ? '+' : ''}${Number(value).toFixed(3)} ETH`
+function formatSummary(roundResult) {
+  return `
+    <div class="settlement-summary">
+      <p>${roundResult.aiSummary ?? humanRoundSummary(roundResult)}</p>
+      <div class="settlement-total">
+        <span>本轮净收益 ${formatSignedEth(roundResult.netProfit)}</span>
+        <span>Gas 使用 ${roundResult.gasUsed} Gwei</span>
+      </div>
+    </div>
+  `
+}
+
+function humanRoundSummary(roundResult) {
+  const net = Number(roundResult.netProfit) || 0
+  if (net > 0) return `本轮赚钱 ${formatSignedEth(net)}，收益会加入累计利润。`
+  if (net < 0) return `本轮亏损 ${formatSignedEth(net)}，会推进连亏计数。`
+  return '本轮盈亏持平，没有扩大风险。'
+}
+
+function formatProgress(roundResult, gameState) {
+  if (!gameState) return ''
+
+  const projectedProfit = roundEth((gameState.cumulativeProfit ?? 0) + (roundResult.netProfit ?? 0))
+  const projectedLossStreak = (roundResult.netProfit ?? 0) < 0 ? (gameState.consecutiveLoss ?? 0) + 1 : 0
+  const profitToVictory = Math.max(0, roundEth(10 - projectedProfit))
+  const lossBuffer = Math.max(0, roundEth(projectedProfit + 0.5))
+
+  return `
+    <section class="win-loss-progress">
+      <h3>胜负条件</h3>
+      <div class="progress-grid">
+        <div>
+          <strong>当前处境</strong>
+          <span>预计累计收益 ${formatSignedEth(projectedProfit)} · 连亏 ${projectedLossStreak} / 2</span>
+        </div>
+        <div>
+          <strong>胜利</strong>
+          <span>到第 20 层且累计收益 > +10 ETH；还差 ${profitToVictory.toFixed(3)} ETH。</span>
+        </div>
+        <div>
+          <strong>失败</strong>
+          <span>连亏达到 2 且累计收益 < -0.5 ETH；当前距离亏损线 ${lossBuffer.toFixed(3)} ETH。</span>
+        </div>
+      </div>
+    </section>
+  `
 }
 
 function formatHighlights(highlights = []) {
@@ -80,7 +128,7 @@ function formatHighlights(highlights = []) {
         .map(
           (highlight) => `
             <div class="decision-highlight">
-              <span>${highlight.momentLabel}</span>
+              <span>${highlightLabel(highlight.momentLabel)}</span>
               <p>${highlight.description}</p>
             </div>
           `,
@@ -88,4 +136,52 @@ function formatHighlights(highlights = []) {
         .join('')}
     </div>
   `
+}
+
+function reasonFromEvents(card) {
+  const result = [...(card.events ?? [])].reverse().find((event) =>
+    ['success', 'failure', 'bot', 'repair'].includes(event.kind),
+  )
+  return result?.detail ?? ''
+}
+
+function statusLabel(status) {
+  const labels = {
+    success: '成功',
+    failed: '失败',
+    abandoned: '放弃',
+  }
+  return labels[status] ?? status
+}
+
+function typeLabel(type) {
+  const labels = {
+    arbitrage: '套利',
+    sandwich: '夹子',
+    nft_snipe: 'NFT 抢购',
+    front_run: '抢跑',
+    liquidation: '清算',
+  }
+
+  return labels[type] ?? type
+}
+
+function highlightLabel(label) {
+  const labels = {
+    task_decomposition: '任务拆解',
+    multi_step_planning: '多步规划',
+    tool_call: '链上动作',
+    iterative_repair: '迭代修复',
+    workflow_closure: '闭环总结',
+  }
+  return labels[label] ?? label
+}
+
+function formatSignedEth(value) {
+  const number = Number(value) || 0
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)} ETH`
+}
+
+function roundEth(value) {
+  return Math.round(value * 1000) / 1000
 }

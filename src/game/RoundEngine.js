@@ -45,6 +45,7 @@ export const RoundEngine = {
     this._timerDone = null
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
+    if (newPhase !== 'play') UIRenderer.setSelectionStatus(null)
     UIRenderer.renderHeader(this.gameState)
 
     if (newPhase === 'scan') this.startScan()
@@ -105,20 +106,30 @@ export const RoundEngine = {
   },
 
   startPlay() {
-    UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'play' })
-    UIRenderer.setPlayEnabled(this.selectedIds.size > 0)
+    this.renderPlayableHand()
     this.startPhaseTimer(this.roundConfig.playMs ?? DEFAULT_PLAY_MS, () => this.transition('execute'))
   },
 
   async startExecute(selectedCards = this.getSelectedCards(), gasAllocations = this.getGasAllocations(selectedCards)) {
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'execute' })
     UIRenderer.setPlayEnabled(false)
+    UIRenderer.setSelectionStatus(null)
     UIRenderer.setTimerText('Executing')
     UIRenderer.setExecutionMode(this.isAdaptiveMode() ? 'adaptive' : 'rigid')
 
-    this.roundResult = this.isAdaptiveMode()
-      ? await ExecutionEngine.runAdaptiveMode(selectedCards, this.gameState, ExecutorAI)
-      : await ExecutionEngine.runRigidMode(selectedCards, gasAllocations, this.gameState)
+    try {
+      this.roundResult = this.isAdaptiveMode()
+        ? await ExecutionEngine.runAdaptiveMode(selectedCards, this.gameState, ExecutorAI)
+        : await ExecutionEngine.runRigidMode(selectedCards, gasAllocations, this.gameState)
+    } catch (error) {
+      ThoughtChainPanel.appendLog({
+        timestampMs: Date.now(),
+        source: 'system',
+        text: `[执行异常] ${error.message}。已进入安全结算，避免回合卡死。`,
+        isStreaming: false,
+      })
+      this.roundResult = buildEmergencyResult(selectedCards, error)
+    }
     this.transition('settle')
   },
 
@@ -127,7 +138,7 @@ export const RoundEngine = {
     this.gameState.gasPool = Math.max(0, this.gameState.gasPool - safeResult.gasUsed)
     UIRenderer.renderHeader(this.gameState)
     UIRenderer.setTimerText('Settled')
-    SettlementPanel.show(safeResult, () => {
+    SettlementPanel.show(safeResult, this.gameState, () => {
       ProgressionEngine.afterRound(safeResult, this.gameState)
       UIRenderer.renderHeader(this.gameState)
     })
@@ -139,11 +150,17 @@ export const RoundEngine = {
     if (this.selectedIds.has(cardId)) {
       this.selectedIds.delete(cardId)
     } else {
+      const card = this.currentHand.find((item) => item.id === cardId)
+      const validation = this.validateAddCard(card)
+      if (!validation.valid) {
+        this.renderPlayableHand(validation.message)
+        return
+      }
+
       this.selectedIds.add(cardId)
     }
 
-    UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'play' })
-    UIRenderer.setPlayEnabled(this.selectedIds.size > 0)
+    this.renderPlayableHand()
   },
 
   confirmPlay(options = {}) {
@@ -153,8 +170,70 @@ export const RoundEngine = {
       this.selectedIds.clear()
     }
 
+    const selection = this.getSelectionState()
+    if (!options.skip && !selection.isValid) {
+      this.renderPlayableHand(selection.message)
+      return
+    }
+
     this.gasAllocations = this.getGasAllocations(this.getSelectedCards())
     this.transition('execute')
+  },
+
+  renderPlayableHand(message = '') {
+    const selection = this.getSelectionState(message)
+    UIRenderer.renderHand(this.currentHand, [...this.selectedIds], {
+      phase: 'play',
+      constraints: selection,
+    })
+    UIRenderer.setSelectionStatus(selection)
+    UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
+  },
+
+  validateAddCard(card) {
+    if (!card) return { valid: false, message: '未找到这张机会牌。' }
+
+    const selection = this.getSelectionState()
+    if (selection.selectedCount >= selection.maxCards) {
+      return { valid: false, message: `本层最多选择 ${selection.maxCards} 张机会牌。` }
+    }
+
+    if (selection.selectedGas + card.gasCost > selection.gasPool) {
+      return { valid: false, message: `Gas 预算不足：还剩 ${selection.gasPool - selection.selectedGas} Gwei。` }
+    }
+
+    return { valid: true, message: '' }
+  },
+
+  getSelectionState(message = '') {
+    const layerConfig = LAYER_CONFIG[this.gameState?.currentLayer] ?? LAYER_CONFIG[20]
+    const maxCards = layerConfig.slots ?? 1
+    const gasPool = this.gameState?.gasPool ?? 0
+    const selectedCards = this.getSelectedCards()
+    const selectedGas = selectedCards.reduce((sum, card) => sum + card.gasCost, 0)
+    const disabledReasons = {}
+
+    this.currentHand.forEach((card) => {
+      if (this.selectedIds.has(card.id)) return
+      if (selectedCards.length >= maxCards) {
+        disabledReasons[card.id] = `已达本层上限 ${maxCards} 张`
+        return
+      }
+      if (selectedGas + card.gasCost > gasPool) {
+        disabledReasons[card.id] = `Gas 不足，还剩 ${gasPool - selectedGas} Gwei`
+      }
+    })
+
+    const isValid = selectedCards.length <= maxCards && selectedGas <= gasPool
+    return {
+      maxCards,
+      gasPool,
+      selectedCount: selectedCards.length,
+      selectedGas,
+      disabledReasons,
+      isValid,
+      message: message || (isValid ? '' : '当前选牌超过上限或 Gas 预算。'),
+    }
   },
 
   pauseTimers() {
@@ -233,7 +312,7 @@ export const RoundEngine = {
   },
 
   startPhaseTimer(durationMs, onDone, label = null) {
-    this.clearRunningTimers()
+    this.clearPhaseTimer()
     this._timerDone = onDone
     this._timerRemainingMs = durationMs
     this._timerEndAt = Date.now() + durationMs
@@ -253,12 +332,16 @@ export const RoundEngine = {
   },
 
   clearRunningTimers() {
+    this.clearPhaseTimer()
+    this._revealTimers.forEach((timerId) => window.clearTimeout(timerId))
+    this._revealTimers = []
+  },
+
+  clearPhaseTimer() {
     if (this._timerId) window.clearTimeout(this._timerId)
     if (this._intervalId) window.clearInterval(this._intervalId)
-    this._revealTimers.forEach((timerId) => window.clearTimeout(timerId))
     this._timerId = null
     this._intervalId = null
-    this._revealTimers = []
   },
 
   clearTimers() {
@@ -276,4 +359,33 @@ function unlockAgentsForLayer(gameState, layer) {
       gameState.unlockAgent(config.unlocks)
     }
   })
+}
+
+function buildEmergencyResult(cards, error) {
+  const failedCards = cards.map((card) => ({
+    ...card,
+    status: 'failed',
+    actualProfit: 0,
+    resultReason: `执行异常：${error.message}`,
+    events: [
+      {
+        kind: 'failure',
+        title: '执行链路异常',
+        detail: error.message,
+      },
+    ],
+  }))
+
+  return {
+    cards: failedCards,
+    netProfit: 0,
+    gasUsed: 0,
+    aiSummary: `执行阶段出现异常：${error.message}。系统已安全进入结算。`,
+    decisionHighlights: [
+      {
+        momentLabel: 'workflow_closure',
+        description: '执行异常被捕获，回合没有停在执行阶段，而是安全进入结算。',
+      },
+    ],
+  }
 }

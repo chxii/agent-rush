@@ -9,6 +9,7 @@ const elements = {
   skipButton: null,
   timer: null,
   actionBar: null,
+  selectionStatus: null,
 }
 
 let cardClickCallback = null
@@ -24,6 +25,14 @@ export const UIRenderer = {
     elements.skipButton = document.querySelector('#skip-button')
     elements.timer = document.querySelector('#round-timer')
     elements.actionBar = document.querySelector('#action-bar')
+    elements.selectionStatus = document.querySelector('#selection-status')
+
+    if (!elements.selectionStatus && elements.actionBar) {
+      elements.selectionStatus = document.createElement('div')
+      elements.selectionStatus.id = 'selection-status'
+      elements.selectionStatus.className = 'selection-status'
+      elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+    }
 
     elements.handArea?.addEventListener('click', (event) => {
       const cardButton = event.target.closest('[data-card-id]')
@@ -84,13 +93,16 @@ export const UIRenderer = {
     const selectedSet = new Set(selectedIds)
     const phase = options.phase ?? 'play'
     const enteringId = options.enteringId
+    const constraints = options.constraints ?? null
     const isPlayable = phase === 'play'
 
     elements.handArea.innerHTML = cards
       .map((card) => {
         const riskPercent = Math.round(card.displayedRisk * 100)
+        const disabledReason = constraints?.disabledReasons?.[card.id] ?? ''
+        const isDisabled = !isPlayable || Boolean(disabledReason)
         return `
-          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${card.id === enteringId ? 'entering' : ''} ${card.rarity}" data-card-id="${card.id}" type="button" ${isPlayable ? '' : 'disabled'}>
+          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${disabledReason ? 'blocked' : ''} ${card.id === enteringId ? 'entering' : ''} ${card.rarity}" data-card-id="${card.id}" type="button" ${isDisabled ? 'disabled' : ''}>
             <span class="card-top">
               <span>${typeLabel(card.type)}</span>
               <span class="rarity">${card.rarity}</span>
@@ -100,12 +112,13 @@ export const UIRenderer = {
             <span class="metric risk-${riskBucket(card.displayedRisk)}">Risk ${riskPercent}%</span>
             <span class="metric">Window ${card.timeWindowSec}s</span>
             <span class="reason">${card.isScam ? '! ' : ''}${card.riskReason}</span>
+            ${disabledReason ? `<span class="blocked-reason">${disabledReason}</span>` : ''}
           </button>
         `
       })
       .join('')
 
-    this.setPlayEnabled(isPlayable && selectedIds.length > 0)
+    this.setPlayEnabled(isPlayable && selectedIds.length > 0 && (constraints?.isValid ?? true))
   },
 
   setPlayEnabled(enabled) {
@@ -116,6 +129,23 @@ export const UIRenderer = {
 
   setTimerText(text) {
     if (elements.timer) elements.timer.textContent = text
+  },
+
+  setSelectionStatus(status) {
+    if (!elements.selectionStatus) return
+
+    if (!status) {
+      elements.selectionStatus.innerHTML = ''
+      elements.selectionStatus.hidden = true
+      return
+    }
+
+    elements.selectionStatus.hidden = false
+    elements.selectionStatus.innerHTML = `
+      <p class="label">选牌限制</p>
+      <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gwei</strong>
+      ${status.message ? `<span>${status.message}</span>` : ''}
+    `
   },
 
   setPhase(phase) {

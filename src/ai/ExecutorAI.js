@@ -5,6 +5,7 @@ import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const DEFAULT_MODEL = 'glm-4-flash'
 const TIMEOUT_MS = 5000
+const STREAM_READ_TIMEOUT_MS = 10000
 const CACHE_LIMIT = 50
 const STREAM_DELAY_MIN_MS = 20
 const STREAM_DELAY_MAX_MS = 30
@@ -40,7 +41,10 @@ export const ExecutorAI = {
     if (this._useMock) return ExecutorMock.call(callType, input)
 
     const cached = getCachedResponse(callType, input)
-    if (cached) return cached
+    if (cached) {
+      appendSystemLog(`[LLM] ${callType} 使用缓存结果。`)
+      return cached
+    }
 
     return this.requestWithFallback(callType, input, { stream: false })
   },
@@ -54,6 +58,7 @@ export const ExecutorAI = {
 
     const cached = getCachedResponse(callType, input)
     if (cached) {
+      appendSystemLog(`[LLM] ${callType} 使用缓存结果。`)
       await streamText(cached[streamField] ?? cached.reasoning ?? '', onChunk)
       return cached
     }
@@ -79,22 +84,35 @@ export const ExecutorAI = {
   },
 
   async requestWithFallback(callType, input, options) {
+    const startedAt = performance.now()
+
     try {
-      const response = options.stream
+      appendSystemLog(`[LLM] ${callType} 发起真实调用（${options.stream ? '流式' : '非流式'}）。`)
+      const result = options.stream
         ? await requestStreamingJson(callType, input, options.onFieldDelta, options.streamField)
         : await requestJson(callType, input)
+      const response = result.data
       const validation = SchemaValidator.validate(callType, response)
+      const elapsedMs = Math.round(performance.now() - startedAt)
 
       if (!validation.valid) {
         console.warn(`[ExecutorAI] ${callType} schema validation failed`, validation.errors)
+        appendSystemLog(`[LLM] ${callType} schema 校验失败，用时 ${elapsedMs}ms：${formatValidationErrors(validation.errors)}`)
+        appendSystemLog(`[LLM] ${callType} 原始返回摘要：${summarizeText(result.rawContent)}`)
         appendSystemLog('[自动降级] AI 响应格式不符合 schema，使用保底策略')
         return replayFallbackIfNeeded(callType, input, options)
       }
 
+      appendSystemLog(`[LLM] ${callType} 成功，用时 ${elapsedMs}ms，返回摘要：${summarizeText(result.rawContent)}`)
       setCachedResponse(callType, input, response)
       return response
     } catch (error) {
+      const elapsedMs = Math.round(performance.now() - startedAt)
       console.warn(`[ExecutorAI] ${callType} request failed`, error)
+      appendSystemLog(`[LLM] ${callType} 调用失败，用时 ${elapsedMs}ms：${error.message}`)
+      if (error.rawContent) {
+        appendSystemLog(`[LLM] ${callType} 失败前已收到：${summarizeText(error.rawContent)}`)
+      }
       appendSystemLog('[自动降级] AI 响应超时，使用保底策略')
       return replayFallbackIfNeeded(callType, input, options)
     }
@@ -219,7 +237,10 @@ export function createFieldValueExtractor(fieldName) {
 async function requestJson(callType, input) {
   const apiResponse = await fetchWithTimeout(false, callType, input)
   const content = apiResponse.choices?.[0]?.message?.content
-  return parseJsonContent(content)
+  return {
+    data: parseJsonContent(content),
+    rawContent: content ?? '',
+  }
 }
 
 async function requestStreamingJson(callType, input, onFieldDelta = () => {}, streamField = 'reasoning') {
@@ -232,22 +253,27 @@ async function requestStreamingJson(callType, input, onFieldDelta = () => {}, st
   let buffer = ''
   let content = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  try {
+    while (true) {
+      const { done, value } = await readStreamChunk(reader)
+      if (done) break
 
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split(/\r?\n/)
-    buffer = lines.pop() ?? ''
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() ?? ''
 
-    lines.forEach((line) => {
-      const chunk = parseSseLine(line)
-      if (!chunk) return
+      lines.forEach((line) => {
+        const chunk = parseSseLine(line)
+        if (!chunk) return
 
-      content += chunk
-      const delta = extractor.push(chunk)
-      if (delta) onFieldDelta(delta)
-    })
+        content += chunk
+        const delta = extractor.push(chunk)
+        if (delta) onFieldDelta(delta)
+      })
+    }
+  } catch (error) {
+    error.rawContent = content
+    throw error
   }
 
   buffer += decoder.decode()
@@ -261,7 +287,31 @@ async function requestStreamingJson(callType, input, onFieldDelta = () => {}, st
       if (delta) onFieldDelta(delta)
     })
 
-  return parseJsonContent(content)
+  return {
+    data: parseJsonContent(content),
+    rawContent: content,
+  }
+}
+
+async function readStreamChunk(reader) {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error('SSE 流读取超时')), STREAM_READ_TIMEOUT_MS)
+      }),
+    ])
+  } catch (error) {
+    try {
+      await reader.cancel()
+    } catch (cancelError) {
+      console.warn('[ExecutorAI] Failed to cancel stalled SSE reader', cancelError)
+    }
+    throw error
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId)
+  }
 }
 
 async function fetchWithTimeout(stream, callType, input) {
@@ -387,6 +437,20 @@ function getBaseUrl() {
 
 function getModel() {
   return window.GLM_MODEL || DEFAULT_MODEL
+}
+
+function summarizeText(text) {
+  const normalized = String(text ?? '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return '空响应'
+  return normalized.length > 220 ? `${normalized.slice(0, 220)}...` : normalized
+}
+
+function formatValidationErrors(errors = []) {
+  if (!errors.length) return '未知字段错误'
+  return errors
+    .slice(0, 4)
+    .map((error) => `${error.instancePath || '/'} ${error.message}`)
+    .join('；')
 }
 
 function appendSystemLog(text) {

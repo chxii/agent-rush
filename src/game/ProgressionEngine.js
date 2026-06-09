@@ -12,7 +12,7 @@ export const ProgressionEngine = {
   startRun(gameState) {
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = Math.min(gameState.gasPool || gameState.gasPoolMax, gameState.gasPoolMax)
-    this.showSceneSelection(gameState)
+    this.showSceneSelection(gameState, { forceRoster: true })
   },
 
   afterRound(roundResult, gameState) {
@@ -46,33 +46,46 @@ export const ProgressionEngine = {
 
     if (unlockAgentId && !gameState.unlockedAgents.includes(unlockAgentId)) {
       gameState.unlockAgent(unlockAgentId)
-      OverlayManager.showAgentUnlock(unlockAgentId, () => this.advanceAfterReward(gameState, completedLayer))
+      OverlayManager.showAgentUnlock(unlockAgentId, () =>
+        this.advanceAfterReward(gameState, completedLayer, { forceRoster: true }),
+      )
       return
     }
 
     this.advanceAfterReward(gameState, completedLayer)
   },
 
-  advanceAfterReward(gameState, completedLayer) {
+  advanceAfterReward(gameState, completedLayer, options = {}) {
     gameState.currentLayer = Math.min(completedLayer + 1, 20)
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = gameState.gasPoolMax
-    this.showSceneSelection(gameState)
+    this.showSceneSelection(gameState, options)
   },
 
-  showSceneSelection(gameState) {
+  showSceneSelection(gameState, options = {}) {
     const layerConfig = getLayerConfig(gameState.currentLayer)
     const availableScenes = layerConfig.scenes ?? [layerConfig.scene]
     if (availableScenes.length <= 1) {
       gameState.currentScene = availableScenes[0]
-      this.showAgentRoster(gameState)
+      this.beginLayer(gameState, options)
       return
     }
 
     OverlayManager.showSceneSelect(availableScenes, (sceneId) => {
       gameState.currentScene = sceneId
-      this.showAgentRoster(gameState)
+      this.beginLayer(gameState, options)
     })
+  },
+
+  beginLayer(gameState, options = {}) {
+    if (options.forceRoster) {
+      this.showAgentRoster(gameState)
+      return
+    }
+
+    ensureActiveRoster(gameState)
+    gameState.saveProgress()
+    if (roundStarter) roundStarter(gameState)
   },
 
   showAgentRoster(gameState) {
@@ -113,4 +126,17 @@ function restartGame(gameState) {
   gameState.consecutiveLoss = 0
   OverlayManager.hideAll()
   ProgressionEngine.startRun(gameState)
+}
+
+function ensureActiveRoster(gameState) {
+  const slots = getLayerConfig(gameState.currentLayer).slots
+  const active = gameState.activeAgents.filter((agentId) => gameState.unlockedAgents.includes(agentId)).slice(0, slots)
+
+  gameState.unlockedAgents.forEach((agentId) => {
+    if (active.length < slots && !active.includes(agentId)) {
+      active.push(agentId)
+    }
+  })
+
+  gameState.activeAgents = active
 }

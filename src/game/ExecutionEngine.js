@@ -3,8 +3,8 @@ import { getFallbackPlan } from '../ai/ExecutorMock.js'
 import { SchemaValidator } from '../ai/SchemaValidator.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
 
-const RIGID_STEP_DELAY_MS = 800
-const ADAPTIVE_STEP_DELAY_MS = 400
+const RIGID_STEP_DELAY_MS = 900
+const ADAPTIVE_STEP_DELAY_MS = 650
 
 export const ExecutionEngine = {
   async runRigidMode(cards, gasAllocations, gameState) {
@@ -14,37 +14,39 @@ export const ExecutionEngine = {
 
     for (const card of cards) {
       const allocatedGas = allocationMap.get(card.id) ?? card.gasCost
-      const elapsedSec = (performance.now() - executionStartMs) / 1000
-      const workingCard = { ...card, allocatedGas, status: 'in_progress' }
+      const workingCard = createWorkingCard(card, allocatedGas)
+      ThoughtChainPanel.startCard(workingCard)
 
-      appendLog('executor', `[执行] 开始执行 ${card.id} (${card.type})，Gas ${allocatedGas} Gwei`)
+      try {
+        recordEvent(workingCard, 'plan', '开始执行', `按固定脚本执行 ${typeLabel(card.type)}，分配 Gas ${allocatedGas} Gwei。`)
 
-      if (elapsedSec > card.timeWindowSec) {
-        workingCard.status = 'failed'
-        workingCard.actualProfit = 0
-        appendResultLog(workingCard, '时间窗口过期')
+        const elapsedSec = (performance.now() - executionStartMs) / 1000
+        if (elapsedSec > card.timeWindowSec) {
+          failCard(workingCard, '时间窗口过期', 0)
+          executedCards.push(workingCard)
+          await delay(RIGID_STEP_DELAY_MS)
+          continue
+        }
+
+        recordToolEvent(workingCard, 'broadcast_tx', { type: card.type, gas: allocatedGas })
+
+        const competition = EnemyBotAI.compete(card, gameState)
+        if (competition.stolen) {
+          workingCard.botName = competition.botName
+          failCard(workingCard, `被 ${competition.botName} 抢占`, -gasLossToEth(card.gasCost), 'bot')
+          executedCards.push(workingCard)
+          await delay(RIGID_STEP_DELAY_MS)
+          continue
+        }
+
+        resolveCardSuccess(workingCard)
+        recordResultEvent(workingCard)
         executedCards.push(workingCard)
         await delay(RIGID_STEP_DELAY_MS)
-        continue
-      }
-
-      appendLog('tool', `broadcast_tx(${card.type}, gas=${allocatedGas})`)
-
-      const competition = EnemyBotAI.compete(card, gameState)
-      if (competition.stolen) {
-        workingCard.status = 'failed'
-        workingCard.actualProfit = -gasLossToEth(card.gasCost)
-        appendResultLog(workingCard, `被 ${competition.botName} 抢占`)
+      } catch (error) {
+        failCard(workingCard, `执行异常：${error.message}`, 0)
         executedCards.push(workingCard)
-        await delay(RIGID_STEP_DELAY_MS)
-        continue
       }
-
-      resolveCardSuccess(workingCard)
-      appendResultLog(workingCard, workingCard.status === 'success' ? '确认成功' : '链上执行失败')
-
-      executedCards.push(workingCard)
-      await delay(RIGID_STEP_DELAY_MS)
     }
 
     return buildRoundResult(executedCards)
@@ -75,81 +77,117 @@ export const ExecutionEngine = {
 
     for (const card of [...orderedCards, ...cardsNotPlanned]) {
       const allocatedGas = allocationMap.get(card.id) ?? card.gasCost
-      const workingCard = { ...card, allocatedGas, status: 'in_progress' }
+      const workingCard = createWorkingCard(card, allocatedGas)
       let abandoned = false
       let repaired = false
 
-      const singleCardPlan = await callExecutor(executorAI, 'SingleCardPlan', {
-        card: toCardParam(card, allocatedGas),
-        allocatedGas,
-        remainingGasPool,
-        completedCards: completedCards.map(toCompletedCard),
-      })
+      ThoughtChainPanel.startCard(workingCard)
 
-      const competition = EnemyBotAI.compete(card, gameState)
-      if (competition.stolen) {
-        appendLog('system', `[竞争] ${competition.botName} 抢占 ${card.id}`)
-        const incidentResponse = await callExecutor(executorAI, 'IncidentResponse', {
-          event: 'target_stolen',
-          affectedCardId: card.id,
-          remainingGasPool,
-          allCardStatuses: buildCardStatuses(cards, completedCards, card.id, allocatedGas),
-          competitors: [
+      try {
+        const singleCardPlan = await callExecutor(
+          executorAI,
+          'SingleCardPlan',
+          {
+            card: toCardParam(card, allocatedGas),
+            allocatedGas,
+            remainingGasPool,
+            completedCards: completedCards.map(toCompletedCard),
+          },
+          { cardId: card.id },
+        )
+
+        recordEvent(workingCard, 'plan', 'Executor 拆解步骤', singleCardPlan.reasoning)
+
+        const competition = EnemyBotAI.compete(card, gameState)
+        if (competition.stolen) {
+          workingCard.botName = competition.botName
+          recordEvent(workingCard, 'bot', '对手 Bot 抢占', `${competition.botName} 提高出价，正在争夺这张牌。`)
+
+          const incidentResponse = await callExecutor(
+            executorAI,
+            'IncidentResponse',
             {
-              name: competition.botName,
-              gasBid: Math.max(allocatedGas + 10, Math.ceil(allocatedGas * 1.15)),
-              targetCardId: card.id,
+              event: 'target_stolen',
+              affectedCardId: card.id,
+              remainingGasPool,
+              allCardStatuses: buildCardStatuses(cards, completedCards, card.id, allocatedGas),
+              competitors: [
+                {
+                  name: competition.botName,
+                  gasBid: Math.max(allocatedGas + 10, Math.ceil(allocatedGas * 1.15)),
+                  targetCardId: card.id,
+                },
+              ],
+              card,
             },
-          ],
-          card,
-        })
+            { cardId: card.id },
+          )
 
-        if (incidentResponse.selectedPlanId === 'abandon') {
-          workingCard.status = 'abandoned'
-          workingCard.actualProfit = -gasLossToEth(card.gasCost)
-          abandoned = true
-        } else {
-          repaired = true
-          appendLog('tool', `replace_tx(${card.id}, plan=${incidentResponse.selectedPlanId})`)
+          const selectedPlan = incidentResponse.candidatePlans?.find(
+            (plan) => plan.planId === incidentResponse.selectedPlanId,
+          )
+          const selectedPlanText = selectedPlan?.description ?? incidentResponse.selectedPlanId ?? '保底方案'
+
+          if (incidentResponse.selectedPlanId === 'abandon') {
+            failCard(workingCard, `放弃执行：${selectedPlanText}`, -gasLossToEth(card.gasCost), 'failure')
+            abandoned = true
+          } else {
+            repaired = true
+            recordEvent(
+              workingCard,
+              'repair',
+              '迭代修复',
+              `${selectedPlanText}。${selectedPlan?.expectedOutcome ?? '继续尝试挽回收益。'}`,
+            )
+            recordToolEvent(workingCard, 'replace_tx', { cardId: card.id, plan: selectedPlanText })
+          }
         }
-      }
 
-      for (const step of singleCardPlan.steps) {
-        if (abandoned) break
+        for (const step of singleCardPlan.steps) {
+          if (abandoned) break
 
-        appendLog('tool', `${step.action}(${JSON.stringify(step.params ?? {})}) ...`)
-        executionLog.push({
-          timestampMs: Date.now(),
-          action: step.action,
-          input: step.params ?? {},
-          output: {},
-          success: true,
-        })
+          recordToolEvent(workingCard, step.action, step.params ?? {}, step.description)
+          executionLog.push({
+            timestampMs: Date.now(),
+            cardId: card.id,
+            action: step.action,
+            input: step.params ?? {},
+            output: { description: step.description },
+            success: true,
+          })
 
-        await delay(ADAPTIVE_STEP_DELAY_MS)
-      }
+          await delay(ADAPTIVE_STEP_DELAY_MS)
+        }
 
-      if (!abandoned) {
-        resolveCardSuccess(workingCard)
+        if (!abandoned) {
+          resolveCardSuccess(workingCard)
+          if (repaired && workingCard.status === 'success') {
+            workingCard.resultReason = '迭代修复后完成'
+          }
+          recordResultEvent(workingCard)
+        }
+      } catch (error) {
+        failCard(workingCard, `执行异常：${error.message}`, 0)
       }
 
       remainingGasPool = Math.max(0, remainingGasPool - allocatedGas)
       completedCards.push(workingCard)
-      appendResultLog(
-        workingCard,
-        repaired ? '迭代修复后完成' : workingCard.status === 'success' ? '确认成功' : '链上执行失败',
-      )
     }
 
     const baseResult = buildRoundResult(completedCards)
-    const settlementReport = await callExecutor(executorAI, 'SettlementReport', {
-      completedCards: completedCards.map(toCompletedCard),
-      executionLog,
-      totalGasUsed: baseResult.gasUsed,
-      initialGasPool,
-    }, {
-      streamField: 'summary',
-    })
+    const settlementReport = await callExecutor(
+      executorAI,
+      'SettlementReport',
+      {
+        completedCards: completedCards.map(toCompletedCard),
+        executionLog,
+        totalGasUsed: baseResult.gasUsed,
+        initialGasPool,
+      },
+      {
+        streamField: 'summary',
+      },
+    )
 
     return {
       ...baseResult,
@@ -164,13 +202,16 @@ export function uniformRandom(min, max) {
 }
 
 async function callExecutor(executorAI, callType, input, options = {}) {
-  const writer = ThoughtChainPanel.appendStreaming(`[${callType}] `)
+  const writer = ThoughtChainPanel.appendStreaming(`[${callType}] `, null, {
+    cardId: options.cardId,
+    cardTitle: options.cardId,
+  })
   let response
 
   try {
     response = await executorAI.callStreaming(callType, input, (chunk) => writer.write(chunk), options.streamField)
   } catch (error) {
-    writer.write('AI调用失败，使用保底策略。')
+    writer.write('AI 调用失败，使用保底策略。')
     appendLog('system', `[fallback] ${callType} 调用异常：${error.message}`)
     response = getFallbackPlan(callType, input)
   } finally {
@@ -180,9 +221,20 @@ async function callExecutor(executorAI, callType, input, options = {}) {
   const validation = SchemaValidator.validate(callType, response)
   if (validation.valid) return response
 
-  appendLog('system', `[fallback] ${callType} schema校验失败，使用保底策略。`)
+  appendLog('system', `[fallback] ${callType} schema 校验失败，使用保底策略。`)
   console.warn(`[SchemaValidator] ${callType} output invalid`, validation.errors)
   return getFallbackPlan(callType, input)
+}
+
+function createWorkingCard(card, allocatedGas) {
+  return {
+    ...card,
+    allocatedGas,
+    status: 'in_progress',
+    actualProfit: 0,
+    events: [],
+    resultReason: '',
+  }
 }
 
 function resolveCardSuccess(card) {
@@ -190,22 +242,46 @@ function resolveCardSuccess(card) {
   if (success) {
     card.status = 'success'
     card.actualProfit = roundEth(card.expectedProfit * uniformRandom(0.85, 1.15))
+    card.resultReason = card.resultReason || '链上确认成功'
   } else {
-    card.status = 'failed'
-    card.actualProfit = -gasLossToEth(card.gasCost)
+    failCard(card, '链上执行失败', -gasLossToEth(card.gasCost))
   }
+}
+
+function failCard(card, reason, profit, kind = 'failure') {
+  card.status = reason.startsWith('放弃') ? 'abandoned' : 'failed'
+  card.actualProfit = roundEth(profit)
+  card.resultReason = reason
+  recordEvent(card, kind, resultTitle(card), `${reason}，本牌结果 ${formatSignedEth(card.actualProfit)}。`)
+}
+
+function recordResultEvent(card) {
+  recordEvent(
+    card,
+    card.status === 'success' ? 'success' : 'failure',
+    resultTitle(card),
+    `${card.resultReason || statusLabel(card.status)}，本牌结果 ${formatSignedEth(card.actualProfit)}。`,
+  )
+}
+
+function recordToolEvent(card, action, params = {}, description = '') {
+  const explanation = actionExplanation(action)
+  const detail = description ? `${description}。${explanation}` : explanation
+  recordEvent(card, 'tool', action, detail, formatParams(params))
+}
+
+function recordEvent(card, kind, title, detail, meta = '') {
+  const event = { kind, title, detail, meta }
+  card.events.push(event)
+  ThoughtChainPanel.appendCardEvent(card.id, event)
 }
 
 function buildRoundResult(executedCards) {
   return {
     cards: executedCards,
     netProfit: roundEth(executedCards.reduce((sum, card) => sum + (card.actualProfit ?? 0), 0)),
-    gasUsed: executedCards.reduce((sum, card) => sum + card.gasCost, 0),
+    gasUsed: executedCards.reduce((sum, card) => sum + (card.allocatedGas ?? card.gasCost ?? 0), 0),
   }
-}
-
-function appendResultLog(card, reason) {
-  appendLog('system', `[结果] ${card.id}: ${card.status} (${formatSignedEth(card.actualProfit)}) - ${reason}`)
 }
 
 function appendLog(source, text) {
@@ -233,7 +309,8 @@ function toCompletedCard(card) {
     id: card.id,
     status: card.status,
     actualProfit: card.actualProfit,
-    gasUsed: card.gasCost,
+    gasUsed: card.allocatedGas ?? card.gasCost,
+    reason: card.resultReason,
   }
 }
 
@@ -263,6 +340,49 @@ function buildCardStatuses(cards, completedCards, activeCardId, allocatedGas) {
       allocatedGas: card.id === activeCardId ? allocatedGas : card.gasCost,
     }
   })
+}
+
+function actionExplanation(action) {
+  const explanations = {
+    fetch_prices: '读取链上和市场价格，用来判断机会是否仍然存在。',
+    broadcast_tx: '提交交易到链上，开始争夺这笔收益。',
+    replace_tx: '用更高 Gas 或新方案替换交易，尝试抢回执行优先级。',
+    monitor_mempool: '观察交易池变化，确认是否有对手正在抢同一个目标。',
+  }
+  return explanations[action] ?? '执行一个链上辅助动作。'
+}
+
+function formatParams(params) {
+  const entries = Object.entries(params ?? {})
+  if (!entries.length) return ''
+  return entries.map(([key, value]) => `${key}=${value}`).join(' · ')
+}
+
+function resultTitle(card) {
+  if (card.status === 'success') return '执行成功'
+  if (card.status === 'abandoned') return '放弃执行'
+  return '执行失败'
+}
+
+function statusLabel(status) {
+  const labels = {
+    success: '执行成功',
+    failed: '执行失败',
+    abandoned: '已放弃',
+  }
+  return labels[status] ?? status
+}
+
+function typeLabel(type) {
+  const labels = {
+    arbitrage: '套利',
+    sandwich: '夹子',
+    nft_snipe: 'NFT 抢购',
+    front_run: '抢跑',
+    liquidation: '清算',
+  }
+
+  return labels[type] ?? type
 }
 
 function gasLossToEth(gasCost) {
