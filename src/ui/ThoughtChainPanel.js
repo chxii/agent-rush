@@ -95,10 +95,16 @@ function getCardBody(cardId, title = cardId) {
   const panel = document.querySelector('#log-panel')
   if (!panel || !cardId) return null
 
-  if (cardSections.has(cardId)) return cardSections.get(cardId)
+  panel.querySelectorAll('.thought-card.is-active').forEach((item) => item.classList.remove('is-active'))
+
+  if (cardSections.has(cardId)) {
+    const existingBody = cardSections.get(cardId)
+    existingBody.closest('.thought-card')?.classList.add('is-active')
+    return existingBody
+  }
 
   const section = document.createElement('section')
-  section.className = 'thought-card'
+  section.className = 'thought-card is-active'
   section.dataset.cardId = cardId
   section.innerHTML = `
     <div class="thought-card-header">

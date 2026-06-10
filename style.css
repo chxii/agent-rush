@@ -32,7 +32,7 @@ button {
 }
 
 .app-shell {
-  width: min(1280px, calc(100vw - 32px));
+  width: min(1440px, calc(100vw - 32px));
   min-height: 100vh;
   margin: 0 auto;
   padding: 24px 0;
@@ -115,7 +115,7 @@ h2 {
 .main-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 320px;
+  grid-template-columns: 210px minmax(0, 1fr) minmax(380px, 0.48fr);
   gap: 16px;
 }
 
@@ -180,8 +180,8 @@ h2 {
 }
 
 .card {
-  min-height: 220px;
-  padding: 14px;
+  min-height: 206px;
+  padding: 15px;
   display: grid;
   gap: 10px;
   text-align: left;
@@ -215,11 +215,15 @@ h2 {
   animation: card-enter 420ms ease both;
 }
 
-.card-top {
+.card-meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  padding-bottom: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
 }
 
 .card strong {
@@ -280,21 +284,27 @@ h2 {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  scrollbar-gutter: stable;
 }
 
 .log-line {
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.65;
 }
 
 .thought-card {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--line);
   background: rgba(32, 38, 43, 0.72);
-  padding: 10px;
+  padding: 12px;
+}
+
+.thought-card.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .thought-card-header {
@@ -308,7 +318,7 @@ h2 {
 .thought-card-header span {
   min-width: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
@@ -320,16 +330,16 @@ h2 {
 .thought-event {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
-  gap: 8px;
+  gap: 10px;
   border: 1px solid rgba(158, 171, 181, 0.18);
   background: rgba(16, 19, 22, 0.58);
-  padding: 8px;
+  padding: 10px;
 }
 
 .thought-event p {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   color: var(--muted);
-  line-height: 1.45;
+  line-height: 1.6;
 }
 
 .thought-event small {
@@ -489,6 +499,10 @@ h2 {
 
 .action-bar[data-phase="execute"] {
   border-color: var(--blue);
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  box-shadow: 0 -12px 30px rgba(16, 19, 22, 0.72);
 }
 
 .action-bar[data-phase="settle"] {
@@ -520,10 +534,11 @@ h2 {
 }
 
 .intervention-panel {
-  min-width: min(520px, 52vw);
+  min-width: min(620px, 58vw);
   display: grid;
   gap: 8px;
   margin-right: 4px;
+  align-self: stretch;
 }
 
 .intervention-panel[hidden] {
@@ -543,7 +558,7 @@ h2 {
 }
 
 .intervention-form input {
-  min-height: 34px;
+  min-height: 38px;
   border: 1px solid var(--line);
   background: #0f1418;
   color: var(--text);
@@ -893,6 +908,10 @@ h2 {
 
   .log-panel {
     min-height: 220px;
+  }
+
+  .intervention-panel {
+    min-width: min(100%, 720px);
   }
 }
 
