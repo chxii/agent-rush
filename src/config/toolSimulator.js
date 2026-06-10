@@ -2,7 +2,13 @@ export const TOOL_SIMULATOR_CONFIG = {
   gas: {
     gasToEth: 0.001,
     minBroadcastGas: 1,
-    failedGasLossRate: 1,
+    failedGasLossRate: 0.4,
+    failedGasLossRateByReason: {
+      stolen: 0.35,
+      windowExpired: 0.12,
+      txFailed: 0.4,
+      invalidOpportunity: 0.08,
+    },
     abandonGasLossRate: 0.15,
   },
   prices: {
@@ -12,7 +18,7 @@ export const TOOL_SIMULATOR_CONFIG = {
     slippageRange: [0.01, 0.08],
   },
   mempool: {
-    detectionBase: 0.2,
+    detectionBase: 0.145,
     competitionWeight: 0.12,
     botStrengthWeight: 0.45,
     gasDefenseWeight: 0.003,
@@ -20,12 +26,12 @@ export const TOOL_SIMULATOR_CONFIG = {
     competitorBidMultiplier: 1.12,
   },
   broadcast: {
-    baseSuccessProbability: 0.68,
-    gasWeight: 0.22,
-    riskPenalty: 0.55,
-    botPressurePenalty: 0.18,
+    baseSuccessProbability: 0.58,
+    gasWeight: 0.18,
+    riskPenalty: 0.85,
+    botPressurePenalty: 0.24,
     minSuccessProbability: 0.05,
-    maxSuccessProbability: 0.95,
+    maxSuccessProbability: 0.9,
     profitVariance: 0.15,
   },
   replace: {
@@ -70,18 +76,20 @@ export const DEFAULT_CARD_TYPE_MECHANICS = {
   frontRunOverbidBonus: 0,
   frontRunUnderbidPenalty: 0,
   replaceRequiredBidMultiplier: null,
+  failedGasLossMultiplier: 1,
 }
 
 export const CARD_TYPE_MECHANICS = {
   arbitrage: {
     gasSuccessWeight: 0.75,
-    stealProbabilityMultiplier: 0.55,
+    stealProbabilityMultiplier: 1.1,
+    failedGasLossMultiplier: 0.5,
     profitVariance: 0.1,
   },
   sandwich: {
     gasSuccessWeight: 1.75,
     stealProbabilityMultiplier: 1.25,
-    profitVariance: 0.16,
+    profitVariance: 0.3,
   },
   nft_snipe: {
     gasSuccessWeight: 0.9,
@@ -95,7 +103,7 @@ export const CARD_TYPE_MECHANICS = {
     frontRunBidCheck: true,
     frontRunOverbidBonus: 0.28,
     frontRunUnderbidPenalty: 0.34,
-    replaceRequiredBidMultiplier: 1.02,
+    replaceRequiredBidMultiplier: 1.1,
   },
   liquidation: {
     gasSuccessWeight: 0.85,
