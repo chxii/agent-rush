@@ -2,30 +2,42 @@
 
 import { fileURLToPath } from 'node:url'
 
+import { RuleDecider } from '../src/core/RuleDecider.js'
 import { createToolSimulator } from '../src/core/ToolSimulator.js'
 
 export function runBatchSimulation(options = {}) {
   const seed = options.seed ?? 42
   const cards = options.cards ?? createSampleCards()
+  const decision = RuleDecider.createBattlePlan(cards, {
+    gasPool: options.gasPool ?? 180,
+    maxCards: options.maxCards ?? cards.length,
+  })
+  const selectedCards = decision.battlePlan.selectedCards
   const simulator = createToolSimulator({
     seed,
-    cards,
+    cards: selectedCards,
     gasPool: options.gasPool ?? 180,
     layer: options.layer ?? 8,
-    allocations: cards.map((card) => ({ cardId: card.id, gas: card.gasCost })),
+    allocations: Object.entries(decision.battlePlan.gasAllocations).map(([cardId, gas]) => ({ cardId, gas })),
   })
 
   const toolResults = []
-  for (const card of cards) {
+  for (const card of selectedCards) {
     toolResults.push(simulator.execute('fetch_prices', { cardId: card.id }))
     toolResults.push(simulator.execute('monitor_mempool', { cardId: card.id }))
-    toolResults.push(simulator.execute('broadcast_tx', { cardId: card.id, gas: card.gasCost }))
+    toolResults.push(simulator.execute('broadcast_tx', { cardId: card.id, gas: decision.battlePlan.gasAllocations[card.id] }))
   }
 
   const snapshot = simulator.snapshot()
   return {
     status: 'ok',
     seed,
+    battlePlan: {
+      selectedCardIds: selectedCards.map((card) => card.id),
+      gasAllocations: decision.battlePlan.gasAllocations,
+      contingencies: decision.battlePlan.contingencies,
+      valid: decision.validation.valid,
+    },
     summary: {
       cards: snapshot.cards.length,
       successes: snapshot.cards.filter((card) => card.status === 'success').length,

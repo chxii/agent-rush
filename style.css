@@ -246,6 +246,29 @@ h2 {
   line-height: 1.35;
 }
 
+.decision-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.decision-controls label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.decision-controls input,
+.decision-controls select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  background: #0f1418;
+  color: var(--text);
+  padding: 6px 8px;
+}
+
 .log-panel {
   overflow: auto;
   display: flex;

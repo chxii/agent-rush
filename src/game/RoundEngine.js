@@ -1,5 +1,6 @@
 import { generateHand, injectScamCardNextHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
+import { battlePlanToGasAllocationArray, createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
 import { ExecutorAI } from '../ai/ExecutorAI.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
@@ -19,6 +20,8 @@ export const RoundEngine = {
   currentHand: [],
   selectedIds: new Set(),
   gasAllocations: [],
+  battlePlan: null,
+  decisionDraft: { gasAllocations: {}, contingencies: {} },
   roundResult: null,
   _timerId: null,
   _intervalId: null,
@@ -34,6 +37,8 @@ export const RoundEngine = {
     this.currentHand = []
     this.selectedIds.clear()
     this.gasAllocations = []
+    this.battlePlan = null
+    this.decisionDraft = { gasAllocations: {}, contingencies: {} }
     this.roundResult = null
     this.transition('scan')
   },
@@ -110,7 +115,10 @@ export const RoundEngine = {
     this.startPhaseTimer(this.roundConfig.playMs ?? DEFAULT_PLAY_MS, () => this.transition('execute'))
   },
 
-  async startExecute(selectedCards = this.getSelectedCards(), gasAllocations = this.getGasAllocations(selectedCards)) {
+  async startExecute(
+    selectedCards = this.battlePlan?.selectedCards ?? this.getSelectedCards(),
+    gasAllocations = this.battlePlan ? battlePlanToGasAllocationArray(this.battlePlan) : this.getGasAllocations(selectedCards),
+  ) {
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'execute' })
     UIRenderer.setPlayEnabled(false)
     UIRenderer.setSelectionStatus(null)
@@ -119,7 +127,7 @@ export const RoundEngine = {
 
     try {
       this.roundResult = this.isAdaptiveMode()
-        ? await ExecutionEngine.runAdaptiveMode(selectedCards, this.gameState, ExecutorAI)
+        ? await ExecutionEngine.runAdaptiveMode(selectedCards, this.gameState, ExecutorAI, this.battlePlan)
         : await ExecutionEngine.runRigidMode(selectedCards, gasAllocations, this.gameState)
     } catch (error) {
       ThoughtChainPanel.appendLog({
@@ -149,6 +157,8 @@ export const RoundEngine = {
 
     if (this.selectedIds.has(cardId)) {
       this.selectedIds.delete(cardId)
+      delete this.decisionDraft.gasAllocations[cardId]
+      delete this.decisionDraft.contingencies[cardId]
     } else {
       const card = this.currentHand.find((item) => item.id === cardId)
       const validation = this.validateAddCard(card)
@@ -158,6 +168,8 @@ export const RoundEngine = {
       }
 
       this.selectedIds.add(cardId)
+      this.decisionDraft.gasAllocations[cardId] = card.gasCost
+      this.decisionDraft.contingencies[cardId] = 'fight'
     }
 
     this.renderPlayableHand()
@@ -170,14 +182,45 @@ export const RoundEngine = {
       this.selectedIds.clear()
     }
 
+    if (options.battlePlanInput) {
+      this.updateDecisionDraft(options.battlePlanInput)
+    }
+
     const selection = this.getSelectionState()
     if (!options.skip && !selection.isValid) {
       this.renderPlayableHand(selection.message)
       return
     }
 
-    this.gasAllocations = this.getGasAllocations(this.getSelectedCards())
+    this.battlePlan = options.skip
+      ? createBattlePlan()
+      : createBattlePlan({
+          selectedCards: this.getSelectedCards(),
+          gasAllocations: this.decisionDraft.gasAllocations,
+          contingencies: this.decisionDraft.contingencies,
+        })
+    this.gasAllocations = this.battlePlan ? battlePlanToGasAllocationArray(this.battlePlan) : []
     this.transition('execute')
+  },
+
+  updateDecisionDraft(input = {}) {
+    this.decisionDraft = {
+      gasAllocations: {
+        ...this.decisionDraft.gasAllocations,
+        ...(input.gasAllocations ?? {}),
+      },
+      contingencies: {
+        ...this.decisionDraft.contingencies,
+        ...(input.contingencies ?? {}),
+      },
+    }
+  },
+
+  handleDecisionChange(input = {}) {
+    this.updateDecisionDraft(input)
+    const selection = this.getSelectionState()
+    UIRenderer.setSelectionStatus(selection)
+    UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
   },
 
   renderPlayableHand(message = '') {
@@ -210,8 +253,14 @@ export const RoundEngine = {
     const maxCards = layerConfig.slots ?? 1
     const gasPool = this.gameState?.gasPool ?? 0
     const selectedCards = this.getSelectedCards()
-    const selectedGas = selectedCards.reduce((sum, card) => sum + card.gasCost, 0)
+    const selectedGas = selectedCards.reduce((sum, card) => sum + (this.decisionDraft.gasAllocations[card.id] ?? card.gasCost), 0)
     const disabledReasons = {}
+    const battlePlan = createBattlePlan({
+      selectedCards,
+      gasAllocations: this.decisionDraft.gasAllocations,
+      contingencies: this.decisionDraft.contingencies,
+    })
+    const validation = validateBattlePlan(battlePlan, { gasPool, maxCards })
 
     this.currentHand.forEach((card) => {
       if (this.selectedIds.has(card.id)) return
@@ -224,15 +273,19 @@ export const RoundEngine = {
       }
     })
 
-    const isValid = selectedCards.length <= maxCards && selectedGas <= gasPool
+    const isValid = validation.valid
     return {
       maxCards,
       gasPool,
       selectedCount: selectedCards.length,
       selectedGas,
+      remainingGas: validation.remainingGas,
+      gasAllocations: { ...this.decisionDraft.gasAllocations },
+      contingencies: { ...this.decisionDraft.contingencies },
+      validationErrors: validation.errors,
       disabledReasons,
       isValid,
-      message: message || (isValid ? '' : '当前选牌超过上限或 Gas 预算。'),
+      message: message || (isValid ? '' : validation.errors[0]?.message ?? '当前作战方案无效。'),
     }
   },
 
