@@ -54,7 +54,7 @@ function createCard(sceneConfig, rng) {
     gasCost: Math.round(randomFloat(...rarityConfig.gasRange, rng)),
     timeWindowSec: Math.round(randomFloat(10, 50, rng)),
     competitionLevel: Math.round(randomFloat(...COMPETITION_BY_RARITY[rarity], rng)),
-    riskReason: isScam ? 'Low-liquidity opportunity disguised as high return.' : riskReasonForType(type),
+    riskReason: isScam ? '低流动性伪装成高收益机会' : riskReasonForType(type),
     status: 'pending',
     actualProfit: 0,
   }
@@ -70,7 +70,7 @@ function createScamCard(scene, rng) {
     expectedProfit: Math.max(card.expectedProfit, 2.4),
     displayedRisk: 0.08,
     trueRisk: 0.94,
-    riskReason: 'Low-liquidity opportunity disguised as high return.',
+    riskReason: '低流动性伪装成高收益机会',
   }
 }
 
@@ -105,12 +105,12 @@ function round(value) {
 
 function riskReasonForType(type) {
   const reasons = {
-    arbitrage: 'Cross-pool spread is stable; main risk is slippage.',
-    sandwich: 'Short execution window; gas competition can amplify failure risk.',
-    nft_snipe: 'Rarity judgement depends on market depth; volatility is higher.',
-    front_run: 'Priority fee sensitive; can be displaced by a higher bid.',
-    liquidation: 'Liquidation window is clear, but state refresh can lag.',
+    arbitrage: '跨池价差稳定，主要风险来自滑点',
+    sandwich: '交易窗口短，Gas 竞争会放大失败率',
+    nft_snipe: '稀有度判断依赖市场深度，波动较高',
+    front_run: '优先级费用敏感，容易被更高出价覆盖',
+    liquidation: '清算窗口明确，但状态刷新可能滞后',
   }
 
-  return reasons[type] ?? 'Opportunity parameters look normal.'
+  return reasons[type] ?? '机会参数正常'
 }
