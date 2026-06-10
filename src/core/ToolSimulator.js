@@ -1,6 +1,7 @@
 import { BOTS } from '../config/bots.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { EnemyBotAI } from './EnemyBotAI.js'
+import { getRoleBuffs } from './RoleBuffs.js'
 import {
   BOT_STRENGTH_BY_NAME,
   CARD_TYPE_MECHANICS,
@@ -52,10 +53,16 @@ export function createToolState(options = {}, config = TOOL_SIMULATOR_CONFIG) {
   const layer = clampInt(options.layer ?? 1, 1, 20)
   const botName = options.botName === undefined ? activeBotForLayer(layer) : options.botName
   const botStrength = BOT_STRENGTH_BY_NAME[botName] ?? 0
+  const role = options.role ?? null
+  const roleLevel = options.roleLevel ?? 1
+  const roleBuffs = getRoleBuffs(role, roleLevel)
 
   return {
     layer,
     scene: options.scene ?? LAYER_CONFIG[layer]?.scene ?? 'dex_arb',
+    role,
+    roleLevel,
+    roleBuffs,
     botName,
     botStrength,
     gasPool: clampNumber(options.gasPool ?? 0, 0, Number.MAX_SAFE_INTEGER),
@@ -91,7 +98,7 @@ function fetchPrices(state, params, rng, config) {
     success: opportunityStillValid,
     tool: 'fetch_prices',
     cardId: card.id,
-    message: opportunityStillValid ? 'Price gap is still tradable.' : 'Price gap closed before execution.',
+    message: opportunityStillValid ? '价差仍可交易。' : '执行前价差已经消失。',
     opportunityStillValid,
     priceGapEth,
     slippageEstimate,
@@ -112,8 +119,8 @@ function monitorMempool(state, params, rng, config) {
     tool: 'monitor_mempool',
     cardId: card.id,
     message: result.competitorDetected
-      ? `${state.botName} detected with a competing bid.`
-      : 'No active competitor detected.',
+      ? `检测到 ${state.botName} 提交竞争出价。`
+      : '未检测到活跃竞争者。',
     competitorDetected: result.competitorDetected,
     competitorName: result.competitorDetected ? state.botName : null,
     competitorGasBid: result.competitorDetected ? result.competitorGasBid : 0,
@@ -128,10 +135,10 @@ function broadcastTx(state, params, rng, config) {
   const { card } = lookup
   const gas = clampInt(params.gas ?? card.allocatedGas ?? card.gasCost ?? 0, 0)
   if (gas < config.gas.minBroadcastGas) {
-    return invalidToolResult('broadcast_tx', 'Gas bid is below the minimum broadcast threshold.', { cardId: card.id })
+    return invalidToolResult('broadcast_tx', 'Gas 出价低于最低广播门槛。', { cardId: card.id })
   }
   if (gas > state.gasPool) {
-    return invalidToolResult('broadcast_tx', 'Insufficient gas pool for broadcast.', {
+    return invalidToolResult('broadcast_tx', 'Gas 池不足，无法广播交易。', {
       cardId: card.id,
       requestedGas: gas,
       remainingGasPool: state.gasPool,
@@ -145,7 +152,7 @@ function broadcastTx(state, params, rng, config) {
   if (isHardTimeWindowExpired(card, params, mechanics)) {
     spendGas(state, card, gas)
     const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
-    settleCard(card, 'failed', loss, 'Liquidation deadline expired before broadcast.')
+    settleCard(card, 'failed', loss, '清算窗口在广播前已经过期。')
     return {
       success: false,
       tool: 'broadcast_tx',
@@ -170,7 +177,7 @@ function broadcastTx(state, params, rng, config) {
 
   if (stolen) {
     const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
-    settleCard(card, 'failed', loss, `Target stolen by ${state.botName}.`)
+    settleCard(card, 'failed', loss, `目标被 ${state.botName} 抢走。`)
     return {
       success: false,
       tool: 'broadcast_tx',
@@ -192,10 +199,10 @@ function broadcastTx(state, params, rng, config) {
   if (txSucceeded) {
     const profitVariance = mechanics.profitVariance ?? config.broadcast.profitVariance
     const multiplier = 1 + randomBetween(rng, -profitVariance, profitVariance)
-    settleCard(card, 'success', roundEth(card.expectedProfit * multiplier), 'Transaction confirmed on chain.')
+    settleCard(card, 'success', roundEth(card.expectedProfit * multiplier), '交易已在链上确认。')
   } else {
     const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
-    settleCard(card, 'failed', loss, 'Transaction reverted or missed the block slot.')
+    settleCard(card, 'failed', loss, '交易回滚或错过区块窗口。')
   }
 
   return {
@@ -223,7 +230,7 @@ function replaceTx(state, params, rng, config) {
   const oldGas = card.allocatedGas ?? card.gasCost ?? 0
   const newGas = clampInt(params.newGas ?? params.gas ?? Math.ceil(oldGas * 1.2), 0)
   if (newGas <= oldGas) {
-    return invalidToolResult('replace_tx', 'Replacement gas must be higher than the current bid.', {
+    return invalidToolResult('replace_tx', '替换交易的 Gas 必须高于当前出价。', {
       cardId: card.id,
       currentGas: oldGas,
       requestedGas: newGas,
@@ -232,7 +239,7 @@ function replaceTx(state, params, rng, config) {
 
   const gasDelta = newGas - oldGas
   if (gasDelta > state.gasPool) {
-    return invalidToolResult('replace_tx', 'Insufficient gas pool for replacement delta.', {
+    return invalidToolResult('replace_tx', 'Gas 池不足，无法补足替换交易差额。', {
       cardId: card.id,
       requestedGas: newGas,
       gasDelta,
@@ -242,11 +249,15 @@ function replaceTx(state, params, rng, config) {
 
   const competitor = state.competitors[card.id] ?? calculateCompetition(state, card, rng, config, false)
   const mechanics = mechanicsFor(card.type)
-  const requiredBidMultiplier = mechanics.replaceRequiredBidMultiplier ?? config.replace.requiredBidMultiplier
+  const requiredBidMultiplier =
+    (mechanics.replaceRequiredBidMultiplier ?? config.replace.requiredBidMultiplier) *
+    state.roleBuffs.replaceRequiredBidMultiplier
   const requiredBid = Math.ceil((competitor.competitorGasBid || oldGas) * requiredBidMultiplier)
   const bidAdvantage = Math.max(0, newGas - requiredBid) / Math.max(requiredBid, 1)
   const suppressProbability = clamp(
-    config.replace.baseSuppressProbability + bidAdvantage * config.replace.bidAdvantageWeight,
+    config.replace.baseSuppressProbability +
+      bidAdvantage * config.replace.bidAdvantageWeight +
+      state.roleBuffs.replaceSuppressProbabilityBonus,
     0,
     config.replace.maxSuppressProbability,
   )
@@ -265,7 +276,7 @@ function replaceTx(state, params, rng, config) {
     success: suppressSucceeded,
     tool: 'replace_tx',
     cardId: card.id,
-    message: suppressSucceeded ? 'Replacement bid suppressed the competitor.' : 'Replacement bid did not fully suppress the competitor.',
+    message: suppressSucceeded ? '替换出价压制了竞争者。' : '替换出价未能完全压制竞争者。',
     suppressSucceeded,
     newGasConsumed: gasDelta,
     newAllocatedGas: newGas,
@@ -292,7 +303,7 @@ function scanReplacement(state, params, config) {
     success: Boolean(replacement),
     tool: 'scan_replacement',
     cardId: sourceId,
-    message: replacement ? 'Replacement opportunity found.' : 'No viable replacement opportunity found.',
+    message: replacement ? '找到可转移的替代机会。' : '没有找到可用的替代机会。',
     foundReplacement: Boolean(replacement),
     replacementCardId: replacement?.card.id ?? null,
     replacementSummary: replacement
@@ -310,7 +321,7 @@ function reallocateGas(state, params) {
   const allocations = Array.isArray(params.allocations) ? params.allocations : []
   const totalGas = allocations.reduce((sum, item) => sum + clampInt(item.gas ?? 0, 0), 0)
   if (totalGas > state.gasPool) {
-    return invalidToolResult('reallocate_gas', 'Reallocation exceeds remaining gas pool.', {
+    return invalidToolResult('reallocate_gas', '重分配超过剩余 Gas 池。', {
       requestedGas: totalGas,
       remainingGasPool: state.gasPool,
     })
@@ -327,7 +338,7 @@ function reallocateGas(state, params) {
   return {
     success: true,
     tool: 'reallocate_gas',
-    message: 'Gas allocations updated.',
+    message: 'Gas 分配已更新。',
     updatedAllocations,
     remainingPool: state.gasPool - updatedAllocations.reduce((sum, item) => sum + item.gas, 0),
   }
@@ -343,7 +354,7 @@ function abandonCard(state, params, config) {
   state.gasPool -= gasLost
   state.gasUsed += gasLost
   card.gasUsed += gasLost
-  settleCard(card, 'abandoned', roundEth(-gasLost * config.gas.gasToEth), 'Card abandoned before broadcast.')
+  settleCard(card, 'abandoned', roundEth(-gasLost * config.gas.gasToEth), '机会牌在广播前被放弃。')
 
   return {
     success: true,
@@ -386,7 +397,8 @@ function calculateCompetition(state, card, rng, config, sampled) {
       (card.competitionLevel ?? 0) * config.mempool.competitionWeight -
       gasDefense) *
       sensitivity.mempool *
-      mechanics.stealProbabilityMultiplier,
+      mechanics.stealProbabilityMultiplier *
+      state.roleBuffs.stealProbabilityMultiplier,
   )
   const detectionChance = clamp01(config.mempool.detectionBase + stealProbability)
   const competitorDetected = sampled ? rng() < detectionChance : stealProbability > 0
@@ -510,6 +522,8 @@ function snapshotState(state) {
   return {
     layer: state.layer,
     scene: state.scene,
+    role: state.role,
+    roleLevel: state.roleLevel,
     botName: state.botName,
     gasPool: state.gasPool,
     gasUsed: state.gasUsed,

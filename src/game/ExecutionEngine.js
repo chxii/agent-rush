@@ -5,6 +5,7 @@ import { RuleDecider } from '../core/RuleDecider.js'
 import { runSemiLoopExecution } from '../core/SemiLoopExecutor.js'
 import { createRandomSource } from '../core/rng.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
+import { UIRenderer } from '../ui/UIRenderer.js'
 
 export const ExecutionEngine = {
   async runSemiLoopMode(battlePlan, gameState, options = {}) {
@@ -46,6 +47,7 @@ export const ExecutionEngine = {
         interventionState: options.interventionState,
         delay: (ms) => delay(ms),
         hooks: createUiHooks({
+          gameState,
           onExecutionComplete: options.onExecutionComplete,
         }),
       },
@@ -60,6 +62,11 @@ function createUiHooks(options = {}) {
     },
 
     onToolResult({ card, action, params, result }) {
+      if (result?.remainingGasPool != null && options.gameState) {
+        options.gameState.gasPool = Math.max(0, Math.round(Number(result.remainingGasPool) || 0))
+        UIRenderer.renderHeader(options.gameState)
+      }
+
       if (!card) return
       ThoughtChainPanel.appendCardEvent(card.id, {
         kind: 'tool',
@@ -80,7 +87,7 @@ function createUiHooks(options = {}) {
     onDecision({ card, decision }) {
       ThoughtChainPanel.appendCardEvent(card.id, {
         kind: decision.fallback ? 'system' : 'repair',
-        title: decision.fallback ? 'Rule fallback' : 'Executor replan',
+        title: decision.fallback ? '规则保底' : 'Executor 重规划',
         detail: decision.reasoning,
       })
     },

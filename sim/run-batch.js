@@ -9,6 +9,8 @@ export async function runBatchSimulation(options = {}) {
   const seed = options.seed ?? 42
   const cards = options.cards ?? createSampleCards()
   const gasPool = options.gasPool ?? 180
+  const role = options.role ?? null
+  const roleLevel = options.roleLevel ?? 1
   const decision = RuleDecider.createBattlePlan(cards, {
     gasPool,
     maxCards: options.maxCards ?? cards.length,
@@ -19,6 +21,8 @@ export async function runBatchSimulation(options = {}) {
       gasPool,
       layer: options.layer ?? 8,
       scene: options.scene ?? 'nft_market',
+      role,
+      roleLevel,
     },
     {
       decider: options.decider ?? RuleDecider,
@@ -34,6 +38,8 @@ export async function runBatchSimulation(options = {}) {
   return {
     status: 'ok',
     seed,
+    role,
+    roleLevel,
     battlePlan: {
       selectedCardIds: decision.battlePlan.selectedCards.map((card) => card.id),
       gasAllocations: decision.battlePlan.gasAllocations,

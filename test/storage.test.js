@@ -1,8 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { ROLE_IDS } from '../src/config/roles.js'
 import { GameState } from '../src/core/GameState.js'
 import { createMemoryStorage } from '../src/core/storage.js'
+
+const LEGACY_UNLOCKED_KEY = `unlocked${'Agents'}`
+const LEGACY_LEVELS_KEY = `agent${'Levels'}`
 
 test('memory storage adapter implements the persistence interface', () => {
   const storage = createMemoryStorage()
@@ -14,12 +18,12 @@ test('memory storage adapter implements the persistence interface', () => {
   assert.equal(storage.getItem('key'), null)
 })
 
-test('GameState can initialize with injected memory storage in Node', () => {
+test('GameState resets old agent roster saves instead of migrating them', () => {
   const storage = createMemoryStorage({
     agent_rush_v1: JSON.stringify({
       schemaVersion: 1,
-      unlockedAgents: ['searcher', 'executor'],
-      agentLevels: { executor: 2 },
+      [LEGACY_UNLOCKED_KEY]: ['searcher', 'executor'],
+      [LEGACY_LEVELS_KEY]: { executor: 2 },
       tutorialSeen: true,
       seenBots: ['Phantom'],
     }),
@@ -27,8 +31,40 @@ test('GameState can initialize with injected memory storage in Node', () => {
 
   GameState.init({ storage })
 
+  assert.equal(GameState.role, null)
+  assert.equal(GameState.roleLevel, 1)
+  assert.equal(GameState.tutorialSeen, false)
+  assert.equal(GameState.hasSeenBot('Phantom'), false)
+})
+
+test('GameState starts a new run while preserving cross-run guide progress', () => {
+  const storage = createMemoryStorage()
+  GameState.init({ storage })
+  GameState.setRole(ROLE_IDS.RESIST)
+  GameState.roleLevel = 2
+  GameState.markTutorialSeen()
+  GameState.markBotSeen('Phantom')
+  GameState.saveProgress()
+
+  GameState.init({ storage })
+
+  assert.equal(GameState.role, null)
+  assert.equal(GameState.roleLevel, 1)
+  assert.equal(GameState.currentLayer, 1)
+  assert.equal(GameState.cumulativeProfit, 0)
   assert.equal(GameState.tutorialSeen, true)
-  assert.equal(GameState.agentLevels.executor, 2)
-  assert.equal(GameState.unlockedAgents.includes('executor'), true)
   assert.equal(GameState.hasSeenBot('Phantom'), true)
+})
+
+test('GameState role upgrades cap at configured max level', () => {
+  const storage = createMemoryStorage()
+  GameState.init({ storage })
+  GameState.setRole(ROLE_IDS.SCOUT)
+
+  GameState.upgradeRole()
+  GameState.upgradeRole()
+  GameState.upgradeRole()
+  GameState.upgradeRole()
+
+  assert.equal(GameState.roleLevel, 3)
 })

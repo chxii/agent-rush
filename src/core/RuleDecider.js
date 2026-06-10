@@ -18,15 +18,15 @@ export const RuleDecider = {
       battlePlan,
       validation,
       reasoning: validation.valid
-        ? 'RuleDecider selected affordable cards, assigned player-side gas, and set contingency preferences.'
-        : 'RuleDecider could not produce a legal battle plan.',
+        ? 'RuleDecider 已选择可负担的机会牌，分配玩家侧 Gas，并设置遇袭预案。'
+        : 'RuleDecider 未能生成合法作战方案。',
     }
   },
 
   async planInitial(input = {}) {
     return normalizeInitialPlan(
       {
-        reasoning: 'RuleDecider orders selected cards by expected value and keeps player gas allocations unchanged.',
+        reasoning: 'RuleDecider 按预期价值排序已选机会牌，并保持玩家 Gas 分配不变。',
         executionOrder: [...(input.cards ?? [])].sort((a, b) => expectedValue(b) - expectedValue(a)).map((card) => card.id),
       },
       input.cards ?? [],
@@ -53,14 +53,14 @@ export const RuleDecider = {
           targetCardId: affectedCardId,
           gasAllocations: affordable,
           updatedExecutionOrder: affordable.map((item) => item.cardId),
-          reasoning: 'Gas pool is short, so RuleDecider reallocates remaining gas to affordable pending cards.',
+          reasoning: 'Gas 池不足，RuleDecider 将剩余 Gas 重新分配给还能负担的待执行牌。',
         }
       }
 
       return {
         action: DECIDER_ACTIONS.ABANDON_CARD,
         targetCardId: affectedCardId,
-        reasoning: 'Gas pool is exhausted; RuleDecider abandons the affected card.',
+        reasoning: 'Gas 池已经耗尽，RuleDecider 放弃受影响的机会牌。',
       }
     }
 
@@ -71,7 +71,7 @@ export const RuleDecider = {
         action: DECIDER_ACTIONS.REPLACE_TX,
         targetCardId: affectedCardId,
         gas,
-        reasoning: 'Player contingency is fight; RuleDecider attempts one replacement bid if the card is still actionable.',
+        reasoning: '玩家预案为硬刚，RuleDecider 在机会仍可处理时尝试一次替换出价。',
       }
     }
 
@@ -79,7 +79,7 @@ export const RuleDecider = {
       return {
         action: DECIDER_ACTIONS.ABANDON_CARD,
         targetCardId: affectedCardId,
-        reasoning: 'The player contingency or failed transaction favors abandoning this target and preserving the rest.',
+        reasoning: '玩家预案或交易失败结果倾向于放弃当前目标，保留其余机会。',
       }
     }
 
@@ -92,14 +92,14 @@ export const RuleDecider = {
         action: DECIDER_ACTIONS.CONTINUE,
         targetCardId: affectedCardId,
         updatedExecutionOrder: pending,
-        reasoning: 'The player contingency is transfer; RuleDecider prioritizes the best remaining pending target.',
+        reasoning: '玩家预案为转移，RuleDecider 优先推进剩余待执行目标中预期价值最高的一张。',
       }
     }
 
     return {
       action: DECIDER_ACTIONS.CONTINUE,
       targetCardId: affectedCardId,
-      reasoning: 'RuleDecider keeps the remaining plan unchanged.',
+      reasoning: 'RuleDecider 保持剩余计划不变。',
     }
   },
 
@@ -109,16 +109,16 @@ export const RuleDecider = {
     const incidents = input.executionLog?.filter((entry) => entry.incident).length ?? 0
 
     return {
-      reasoning: 'RuleDecider summarizes deterministic semi-loop execution.',
-      summary: `Semi-loop execution complete: ${completedCards.length} cards, ${incidents} replanning incidents, net ${formatSignedEth(netProfit)}.`,
+      reasoning: 'RuleDecider 汇总确定性半闭环执行结果。',
+      summary: `半闭环执行完成：${completedCards.length} 张牌，${incidents} 次重规划事件，净收益 ${formatSignedEth(netProfit)}。`,
       netProfit,
       decisionHighlights: [
         {
           momentLabel: incidents > 0 ? 'iterative_repair' : 'workflow_closure',
           description:
             incidents > 0
-              ? 'Executor only replanned after simulator incidents and otherwise followed the player battle plan.'
-              : 'Executor completed the planned order without unnecessary replanning calls.',
+              ? 'Executor 只在模拟器事件后触发重规划，其余时间遵循玩家作战方案。'
+              : 'Executor 按计划顺序完成执行，没有发起不必要的重规划调用。',
         },
       ],
     }
@@ -203,8 +203,8 @@ function decideOnPlayerIntervention(snapshot) {
       action: target ? DECIDER_ACTIONS.ABANDON_CARD : DECIDER_ACTIONS.CONTINUE,
       targetCardId: target?.id ?? snapshot.affectedCardId,
       reasoning: target
-        ? `Shortcut parsed: abandon highest-risk card ${target.id}.`
-        : 'Shortcut parsed, but no actionable card remains to abandon.',
+        ? `快捷指令已解析：放弃最高风险牌 ${target.id}。`
+        : '快捷指令已解析，但没有可放弃的可行动牌。',
     }
   }
 
@@ -219,8 +219,8 @@ function decideOnPlayerIntervention(snapshot) {
       gasAllocations: target && gas > 0 ? [{ cardId: target.id, gas }] : [],
       updatedExecutionOrder: target ? [target.id] : [],
       reasoning: target
-        ? `Shortcut parsed: focus remaining gas on ${target.id}.`
-        : 'Shortcut parsed, but no actionable card remains for gas focus.',
+        ? `快捷指令已解析：将剩余 Gas 集中到 ${target.id}。`
+        : '快捷指令已解析，但没有可集中 Gas 的可行动牌。',
     }
   }
 
@@ -232,15 +232,15 @@ function decideOnPlayerIntervention(snapshot) {
       gasAllocations: allocations,
       updatedExecutionOrder: allocations.map((item) => item.cardId),
       reasoning: allocations.length > 0
-        ? 'Shortcut parsed: keep all remaining targets live and spread gas across them.'
-        : 'Shortcut parsed, but no actionable cards remain.',
+        ? '快捷指令已解析：保留所有剩余目标，并在它们之间分配 Gas。'
+        : '快捷指令已解析，但没有剩余可行动牌。',
     }
   }
 
   return {
     action: DECIDER_ACTIONS.CONTINUE,
     targetCardId: snapshot.affectedCardId,
-    reasoning: 'Unknown shortcut; keep the current plan.',
+    reasoning: '未知快捷指令，保持当前计划。',
   }
 }
 

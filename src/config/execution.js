@@ -7,17 +7,17 @@ export const SEMI_LOOP_CONFIG = {
 export const INTERVENTION_SHORTCUTS = {
   FIGHT_ALL: {
     id: 'fight_all',
-    label: 'All fight',
+    label: '全部硬刚',
     instruction: 'shortcut:fight_all',
   },
   ABANDON_HIGHEST_RISK: {
     id: 'abandon_highest_risk',
-    label: 'Drop riskiest',
+    label: '放弃最高风险',
     instruction: 'shortcut:abandon_highest_risk',
   },
   FOCUS_BEST_GAS: {
     id: 'focus_best_gas',
-    label: 'Focus best',
+    label: 'Gas 集中最优',
     instruction: 'shortcut:focus_best_gas',
   },
 }

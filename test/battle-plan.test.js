@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { createBattlePlan, validateBattlePlan } from '../src/core/BattlePlan.js'
+import { maxSelectedCardsForLayer } from '../src/config/decision.js'
 import { RuleDecider } from '../src/core/RuleDecider.js'
 import { createToolSimulator } from '../src/core/ToolSimulator.js'
 import { runBatchSimulation } from '../sim/run-batch.js'
@@ -97,6 +98,15 @@ test('batch sim uses a valid RuleDecider battle plan', async () => {
   assert.equal(result.status, 'ok')
   assert.equal(result.battlePlan.valid, true)
   assert.equal(result.battlePlan.selectedCardIds.length > 0, true)
+})
+
+test('decision max selected cards follows the layer curve', () => {
+  assert.equal(maxSelectedCardsForLayer(1), 1)
+  assert.equal(maxSelectedCardsForLayer(3), 1)
+  assert.equal(maxSelectedCardsForLayer(4), 2)
+  assert.equal(maxSelectedCardsForLayer(7), 2)
+  assert.equal(maxSelectedCardsForLayer(8), 3)
+  assert.equal(maxSelectedCardsForLayer(20), 3)
 })
 
 function card(id, overrides = {}) {

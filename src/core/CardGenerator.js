@@ -1,71 +1,36 @@
 import { CARD_TYPES, COMPETITION_BY_RARITY, RARITY } from '../config/cards.js'
 import { SCENES } from '../config/scenes.js'
+import { getRoleBuffs } from './RoleBuffs.js'
 import { createRandomSource } from './rng.js'
 
 let forceScamNextHand = false
 
-export function generateHand(scene, activeAgents, agentLevels, options = {}) {
+export function generateHand(scene, role, roleLevel, options = {}) {
   const rng = options.rng ?? createRandomSource(options.seed)
-  const activeAgentSet = new Set(activeAgents)
-  let cards = runSearcher(scene, agentLevels.searcher ?? 1, rng)
+  let cards = runSearcher(scene, role, roleLevel, rng)
 
   if (forceScamNextHand) {
     cards = [createScamCard(scene, rng), ...cards.slice(1)]
     forceScamNextHand = false
   }
 
-  return activeAgentSet.has('riskAnalyzer')
-    ? cards.map((card) => runRiskAnalyzer(card, agentLevels.riskAnalyzer ?? 1, rng))
-    : cards
+  return cards
 }
 
 export function injectScamCardNextHand() {
   forceScamNextHand = true
 }
 
-export function runSearcher(scene, level, rng = createRandomSource()) {
+export function runSearcher(scene, role, roleLevel, rng = createRandomSource()) {
   const sceneConfig = SCENES[scene] ?? SCENES.dex_arb
-  const cardCount = clampInt(2 + level, 3, 5)
+  const buffs = getRoleBuffs(role, roleLevel)
+  const cardCount = clampInt(
+    buffs.scanCardCount + buffs.scanCardBonus,
+    buffs.scanCardCount,
+    buffs.maxScanCardCount,
+  )
 
   return Array.from({ length: cardCount }, () => createCard(sceneConfig, rng))
-}
-
-export function runRiskAnalyzer(card, level, rng = createRandomSource()) {
-  const analyzedCard = { ...card }
-
-  if (analyzedCard.isScam) {
-    const minRisk = level >= 2 ? 0.9 : 0.85
-    analyzedCard.displayedRisk = round(randomFloat(minRisk, 0.98, rng))
-    analyzedCard.riskReason = 'RiskAnalyzer 识别到骗局特征：收益异常、交易对浅、对手盘可疑'
-    return analyzedCard
-  }
-
-  analyzedCard.displayedRisk = analyzedCard.trueRisk
-  analyzedCard.riskReason = riskReasonForType(analyzedCard.type)
-  return analyzedCard
-}
-
-export function runStrategist(cards, gasPool, activeBotType) {
-  const pressure = activeBotType === 'Phantom' || activeBotType === 'Phantom+' ? 0.75 : 1
-  const scoredCards = cards.map((card) => {
-    const botWeight = card.type === 'nft_snipe' ? pressure : 1
-    const score = ((card.expectedProfit * (1 - card.displayedRisk)) / Math.max(card.gasCost, 1)) * botWeight
-    const affordable = gasPool <= 0 || card.gasCost <= gasPool
-    return { card, score: affordable ? score : score * 0.2 }
-  })
-
-  const recommendedIds = scoredCards
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Math.min(3, scoredCards.length))
-    .map(({ card }) => card.id)
-
-  return {
-    recommendedIds,
-    reason:
-      activeBotType === 'Phantom' || activeBotType === 'Phantom+'
-        ? 'Phantom 系 bot 偏好 NFT，已降低 nft_snipe 推荐权重'
-        : '按收益、风险和 Gas 成本计算 EV 排序',
-  }
 }
 
 function createCard(sceneConfig, rng) {

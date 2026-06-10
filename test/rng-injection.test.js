@@ -2,14 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { generateHand } from '../src/core/CardGenerator.js'
+import { ROLE_IDS } from '../src/config/roles.js'
 import { EnemyBotAI } from '../src/core/EnemyBotAI.js'
 import { createSeededRng, createSequenceRng } from '../src/core/rng.js'
 
 test('card generation is reproducible with an injected seed', () => {
-  const first = generateHand('dex_arb', ['searcher', 'riskAnalyzer'], { searcher: 2, riskAnalyzer: 1 }, {
+  const first = generateHand('dex_arb', ROLE_IDS.SCOUT, 2, {
     rng: createSeededRng('hand-seed'),
   })
-  const second = generateHand('dex_arb', ['searcher', 'riskAnalyzer'], { searcher: 2, riskAnalyzer: 1 }, {
+  const second = generateHand('dex_arb', ROLE_IDS.SCOUT, 2, {
     rng: createSeededRng('hand-seed'),
   })
 

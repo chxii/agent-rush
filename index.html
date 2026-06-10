@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Rush - MEV Simulator</title>
+    <title>Agent Rush - MEV 模拟器</title>
     <link rel="stylesheet" href="style.css">
     <script src="config/env.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ajv@8/dist/ajv.min.js"></script>
@@ -13,7 +13,7 @@
       <section class="top-band">
         <div>
           <p class="eyebrow">Agent Rush</p>
-          <h1>MEV Execution Console</h1>
+          <h1>MEV 执行控制台</h1>
           <button id="codex-button" class="secondary-button codex-button" type="button">图鉴</button>
         </div>
         <div id="header" class="header-grid"></div>
@@ -21,7 +21,7 @@
 
       <section class="main-grid">
         <aside class="side-panel">
-          <h2>Agents</h2>
+          <h2>角色</h2>
           <div id="agent-panel" class="agent-list"></div>
         </aside>
 
@@ -41,11 +41,11 @@
 
       <section id="action-bar" class="action-bar">
         <div>
-          <p class="label">Round Timer</p>
-          <strong id="round-timer">Ready</strong>
+          <p class="label">回合计时</p>
+          <strong id="round-timer">就绪</strong>
         </div>
-        <button id="skip-button" class="secondary-button" type="button">Skip</button>
-        <button id="play-button" class="primary-button" type="button" disabled>Play</button>
+        <button id="skip-button" class="secondary-button" type="button">跳过</button>
+        <button id="play-button" class="primary-button" type="button" disabled>执行</button>
       </section>
 
       <section id="debug-panel" class="debug-panel" style="display:none">

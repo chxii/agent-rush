@@ -11,8 +11,8 @@ export function createInterventionState() {
 }
 
 export function requestPlayerIntervention(state, input = {}) {
-  if (!state) return rejected('Intervention state is unavailable.')
-  if (state.interventionUsed) return rejected('Intervention already used this round.')
+  if (!state) return rejected('干预状态不可用。')
+  if (state.interventionUsed) return rejected('本回合已经用过干预。')
 
   const instruction = normalizeInterventionInput(input)
   if (!instruction.valid) return rejected(instruction.message)
@@ -22,7 +22,7 @@ export function requestPlayerIntervention(state, input = {}) {
   state.lastResult = {
     accepted: true,
     instruction,
-    message: 'Intervention queued for the next executor checkpoint.',
+    message: '干预已排队，将在下一个 Executor 检查点生效。',
   }
   return state.lastResult
 }
@@ -48,7 +48,7 @@ export function normalizeInterventionInput(input = {}) {
   const type = input.type ?? input.mode
   if (type === 'shortcut') {
     const shortcutId = String(input.shortcutId ?? input.id ?? '').trim()
-    if (!SHORTCUT_IDS.has(shortcutId)) return { valid: false, message: 'Unknown intervention shortcut.' }
+    if (!SHORTCUT_IDS.has(shortcutId)) return { valid: false, message: '未知干预快捷指令。' }
     return {
       valid: true,
       mode: 'shortcut',
@@ -67,11 +67,11 @@ export function isShortcutInstruction(instruction) {
 
 function normalizeNatural(text) {
   const trimmed = String(text ?? '').trim()
-  if (!trimmed) return { valid: false, message: 'Intervention instruction is empty.' }
+  if (!trimmed) return { valid: false, message: '干预指令不能为空。' }
 
   if (trimmed.startsWith('shortcut:')) {
     const [, shortcutId, targetCardId] = trimmed.split(':')
-    if (!SHORTCUT_IDS.has(shortcutId)) return { valid: false, message: 'Unknown intervention shortcut.' }
+    if (!SHORTCUT_IDS.has(shortcutId)) return { valid: false, message: '未知干预快捷指令。' }
     return {
       valid: true,
       mode: 'shortcut',

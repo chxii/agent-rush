@@ -19,7 +19,7 @@ test('player intervention can only be accepted once per round', () => {
   assert.equal(first.accepted, true)
   assert.equal(state.interventionUsed, true)
   assert.equal(second.accepted, false)
-  assert.match(second.message, /already used/i)
+  assert.match(second.message, /已经用过/)
 })
 
 test('RuleDecider parses all intervention shortcuts into narrow decisions', async () => {
@@ -225,7 +225,7 @@ function settleSuccess(state, params) {
   target.gasUsed = (target.gasUsed ?? 0) + gas
   target.status = 'success'
   target.actualProfit = target.expectedProfit
-  target.resultReason = 'Transaction confirmed on chain.'
+  target.resultReason = '交易已在链上确认。'
   return {
     success: true,
     tool: 'broadcast_tx',
@@ -261,7 +261,7 @@ function interventionSnapshot() {
       type: INCIDENT_TYPES.PLAYER_INTERVENTION,
       cardId: 'best_ev',
       tool: 'player_intervention',
-      message: 'Player intervention queued.',
+      message: '玩家干预已排队。',
     },
     playerContingency: 'fight',
     competitors: {},

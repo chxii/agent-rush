@@ -1,25 +1,21 @@
 import { SCENES } from '../config/scenes.js'
 import { AGENT_GUIDE, BOT_GUIDE, RULES_PAGES } from '../config/guideContent.js'
+import { ROLE_CONFIG } from '../config/roles.js'
 
 export const OverlayManager = {
   showStartMenu(gameState, onStart) {
-    const agentRows = gameState.unlockedAgents
-      .map((agentId) => {
-        const guide = AGENT_GUIDE[agentId]
-        return `<span>${guide?.name ?? agentId} Lv.${gameState.agentLevels[agentId] ?? 1}</span>`
-      })
-      .join('')
+    const role = ROLE_CONFIG.roles[gameState.role]
     const seenBotCount = gameState.seenBots.length
 
     const panel = showOverlay(
       'Agent Rush',
       `
         <div class="start-menu">
-          <p class="overlay-copy">指挥一支 MEV Agent 战队，在 20 层链上战场中发现机会、分配 Gas、击退对手 Bot。</p>
+          <p class="overlay-copy">在链上机会中看牌、分配 Gas、设定预案，并让 Executor 运行半闭环执行。</p>
           <div class="start-progress">
             <div>
-              <strong>已解锁 Agent</strong>
-              <div class="start-chip-list">${agentRows || '<span>Searcher Lv.1</span>'}</div>
+              <strong>当前角色</strong>
+              <div class="start-chip-list"><span>${role ? `${role.name} Lv.${gameState.roleLevel}` : '开局选择'}</span></div>
             </div>
             <div>
               <strong>已遭遇对手</strong>
@@ -113,8 +109,9 @@ export const OverlayManager = {
         return `
           <button class="choice-card" data-scene-id="${sceneId}" type="button">
             <strong>${scene.name}</strong>
+            <span>${scene.styleHint}</span>
             <span>骗局率 ${(scene.scamRate * 100).toFixed(0)}%</span>
-            <span>偏好 Bot ${scene.botPreference ?? '低'}</span>
+            <span>Bot 偏好 ${scene.botPreference ?? '无'}</span>
           </button>
         `
       })
@@ -129,77 +126,40 @@ export const OverlayManager = {
     })
   },
 
-  showAgentRoster(unlockedAgents, agentLevels, slots, onConfirm) {
-    const selected = new Set(unlockedAgents.slice(0, slots))
-    const body = `
-      <div class="choice-grid">
-        ${unlockedAgents
-          .map(
-            (agentId) => `
-              <button class="choice-card" data-agent-id="${agentId}" type="button">
-                <strong>${agentLabel(agentId)}</strong>
-                <span>Lv.${agentLevels[agentId] ?? 1}</span>
-              </button>
-            `,
-          )
-          .join('')}
-      </div>
-      <button id="agent-roster-confirm" class="primary-button" type="button">确认阵容 (${slots})</button>
-    `
+  showRoleSelect(roles, onSelect) {
+    const body = Object.values(roles)
+      .map(
+        (role) => `
+          <button class="choice-card" data-role-id="${role.id}" type="button">
+            <strong>${role.name}</strong>
+            <span>${role.tagline}</span>
+            <span>${role.buffSummary}</span>
+            <small>${role.description}</small>
+          </button>
+        `,
+      )
+      .join('')
 
-    const panel = showOverlay('Agent 阵容', body)
-    panel.querySelectorAll('[data-agent-id]').forEach((button) => {
-      button.classList.toggle('selected', selected.has(button.dataset.agentId))
-      button.addEventListener('click', () => {
-        const agentId = button.dataset.agentId
-        if (selected.has(agentId)) {
-          selected.delete(agentId)
-        } else if (selected.size < slots) {
-          selected.add(agentId)
-        }
-        button.classList.toggle('selected', selected.has(agentId))
-      })
-    })
-    panel.querySelector('#agent-roster-confirm').addEventListener('click', () => {
-      this.hideAll()
-      onConfirm([...selected])
-    })
-  },
-
-  showBossReward(unlockedAgents, agentLevels, onUpgrade) {
-    const body = `
-      <div class="choice-grid">
-        ${unlockedAgents
-          .map(
-            (agentId) => `
-              <button class="choice-card" data-upgrade-id="${agentId}" type="button">
-                <strong>${agentLabel(agentId)}</strong>
-                <span>Lv.${agentLevels[agentId] ?? 1} -> Lv.${Math.min((agentLevels[agentId] ?? 1) + 1, 3)}</span>
-              </button>
-            `,
-          )
-          .join('')}
-      </div>
-    `
-    const panel = showOverlay('Boss 奖励', body)
-    panel.querySelectorAll('[data-upgrade-id]').forEach((button) => {
+    const panel = showOverlay('选择起始角色', `<div class="choice-grid">${body}</div>`)
+    panel.querySelectorAll('[data-role-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
-        onUpgrade(button.dataset.upgradeId)
+        onSelect(button.dataset.roleId)
       })
     })
   },
 
-  showAgentUnlock(agentId, onConfirm) {
-    const agent = AGENT_GUIDE[agentId]
+  showBossReward(roleId, roleLevel, onConfirm) {
+    const role = ROLE_CONFIG.roles[roleId]
     const panel = showOverlay(
-      `${agent?.name ?? agentLabel(agentId)} 已解锁`,
+      'Boss 奖励',
       `
-        ${agent ? formatAgentEntry(agent) : `<p class="overlay-copy">${agentLabel(agentId)} 加入了阵容。</p>`}
-        <button id="unlock-confirm" class="primary-button" type="button">继续</button>
+        <p class="overlay-copy">${role?.name ?? '角色'} 已强化到 Lv.${roleLevel}。</p>
+        <p class="overlay-copy">${role?.buffSummary ?? '当前角色 buff 已强化。'}</p>
+        <button id="boss-reward-confirm" class="primary-button" type="button">继续</button>
       `,
     )
-    panel.querySelector('#unlock-confirm').addEventListener('click', () => {
+    panel.querySelector('#boss-reward-confirm').addEventListener('click', () => {
       this.hideAll()
       onConfirm()
     })
@@ -214,7 +174,7 @@ export const OverlayManager = {
         `
           <div class="guide-tabs">
             <button data-guide-tab="rules" class="${activeTab === 'rules' ? 'active' : ''}" type="button">规则</button>
-            <button data-guide-tab="agents" class="${activeTab === 'agents' ? 'active' : ''}" type="button">Agents</button>
+            <button data-guide-tab="agents" class="${activeTab === 'agents' ? 'active' : ''}" type="button">角色</button>
             <button data-guide-tab="bots" class="${activeTab === 'bots' ? 'active' : ''}" type="button">对手</button>
           </div>
           <div class="guide-content">${formatCodexTab(activeTab)}</div>
@@ -241,7 +201,7 @@ export const OverlayManager = {
     const panel = showOverlay(
       '游戏结束',
       `
-        <p class="overlay-copy">连续亏损或累计亏损过高，本轮模拟结束。已解锁 Agent 会保留。</p>
+        <p class="overlay-copy">连亏压力已经触发失败线。重新开始后可以再次选择起始角色。</p>
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">重新开始</button>
       `,
@@ -253,7 +213,7 @@ export const OverlayManager = {
     const panel = showOverlay(
       '胜利',
       `
-        <p class="overlay-copy">通关完成。累计收益 ${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH。</p>
+        <p class="overlay-copy">已打通第 20 层，累计收益 ${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH。</p>
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">重新开始</button>
       `,
@@ -344,7 +304,7 @@ function formatAgentEntry(agent) {
   return `
     <section class="guide-entry">
       <h3>${agent.name}</h3>
-      <p><strong>职责</strong><span>${agent.role}</span></p>
+      <p><strong>定位</strong><span>${agent.role}</span></p>
       <p><strong>作用</strong><span>${agent.summary}</span></p>
       <p><strong>没有它会怎样</strong><span>${agent.withoutIt}</span></p>
       <p><strong>怎么用</strong><span>${agent.howToUse}</span></p>
@@ -371,15 +331,15 @@ function formatFinalStats(stats = {}) {
   return `
     <div class="final-stats">
       <div>
-        <strong>Final Layer</strong>
+        <strong>最终层数</strong>
         <span>${stats.currentLayer ?? 1}</span>
       </div>
       <div>
-        <strong>Total Profit</strong>
+        <strong>累计收益</strong>
         <span>${formatSignedEth(stats.cumulativeProfit)}</span>
       </div>
       <div>
-        <strong>Loss Streak</strong>
+        <strong>连亏次数</strong>
         <span>${Math.max(0, Math.round(Number(stats.consecutiveLoss) || 0))}</span>
       </div>
     </div>
@@ -389,8 +349,4 @@ function formatFinalStats(stats = {}) {
 function formatSignedEth(value) {
   const number = Number(value) || 0
   return `${number >= 0 ? '+' : ''}${number.toFixed(3)} ETH`
-}
-
-function agentLabel(agentId) {
-  return AGENT_GUIDE[agentId]?.name ?? agentId
 }

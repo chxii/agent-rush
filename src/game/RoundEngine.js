@@ -2,6 +2,7 @@ import { generateHand, injectScamCardNextHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
 import { createInterventionState, requestPlayerIntervention } from '../core/PlayerIntervention.js'
+import { maxSelectedCardsForLayer } from '../config/decision.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
@@ -71,7 +72,7 @@ export const RoundEngine = {
     UIRenderer.setExecutionMode('semi-loop')
     UIRenderer.renderHand([], [])
     UIRenderer.setPlayEnabled(false)
-    UIRenderer.setTimerText('Scanning')
+    UIRenderer.setTimerText('扫描中')
 
     const activeBotType = EnemyBotAI.getActiveBot(this.gameState.currentLayer)
     if (activeBotType && !this.gameState.hasSeenBot(activeBotType)) {
@@ -88,8 +89,8 @@ export const RoundEngine = {
   runScan(activeBotType) {
     this.currentHand = generateHand(
       this.gameState.currentScene,
-      this.gameState.activeAgents,
-      this.gameState.agentLevels,
+      this.gameState.role,
+      this.gameState.roleLevel,
     )
 
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
@@ -98,7 +99,7 @@ export const RoundEngine = {
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
       source: 'system',
-      text: `扫描 mempool：Layer ${this.gameState.currentLayer}${activeBotType ? `，检测到 ${activeBotType}` : ''}`,
+      text: `扫描 mempool：第 ${this.gameState.currentLayer} 层${activeBotType ? `，检测到 ${activeBotType}` : ''}`,
       isStreaming: false,
     })
 
@@ -113,7 +114,7 @@ export const RoundEngine = {
     })
 
     const scanMs = this.roundConfig.scanMs ?? this.currentHand.length * REVEAL_INTERVAL_MS + SCAN_BUFFER_MS
-    this.startPhaseTimer(scanMs, () => this.transition('play'), 'Scanning')
+    this.startPhaseTimer(scanMs, () => this.transition('play'), '扫描中')
   },
 
   startPlay() {
@@ -134,10 +135,10 @@ export const RoundEngine = {
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'execute' })
     UIRenderer.setPlayEnabled(false)
     UIRenderer.setSelectionStatus(null)
-    UIRenderer.setTimerText('Executing')
+    UIRenderer.setTimerText('执行中')
     UIRenderer.setExecutionMode('semi-loop')
     this._interventionOpen = true
-    this.renderInterventionState('Intervention available once this round.')
+    this.renderInterventionState('本回合可干预一次。')
 
     try {
       this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
@@ -163,9 +164,12 @@ export const RoundEngine = {
 
   startSettle(roundResult) {
     const safeResult = roundResult ?? { cards: [], netProfit: 0, gasUsed: 0 }
-    this.gameState.gasPool = Math.max(0, this.gameState.gasPool - safeResult.gasUsed)
+    const finalGasPool = Number(safeResult.finalState?.gasPool)
+    this.gameState.gasPool = Number.isFinite(finalGasPool)
+      ? Math.max(0, Math.round(finalGasPool))
+      : Math.max(0, this.gameState.gasPool - safeResult.gasUsed)
     UIRenderer.renderHeader(this.gameState)
-    UIRenderer.setTimerText('Settled')
+    UIRenderer.setTimerText('已结算')
     SettlementPanel.show(safeResult, this.gameState, () => {
       ProgressionEngine.afterRound(safeResult, this.gameState)
       UIRenderer.renderHeader(this.gameState)
@@ -245,7 +249,7 @@ export const RoundEngine = {
 
   handleInterventionRequest(input = {}) {
     if (this.gameState?.phase !== 'execute' || !this._interventionOpen) {
-      const result = { accepted: false, message: 'Intervention is only available during execution.' }
+      const result = { accepted: false, message: '只能在执行阶段干预。' }
       this.renderInterventionState(result.message)
       return result
     }
@@ -255,7 +259,7 @@ export const RoundEngine = {
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
       source: 'system',
-      text: result.accepted ? `[Intervention queued] ${result.instruction.text}` : `[Intervention rejected] ${result.message}`,
+      text: result.accepted ? `[干预已排队] ${result.instruction.text}` : `[干预被拒绝] ${result.message}`,
       isStreaming: false,
     })
     return result
@@ -301,8 +305,7 @@ export const RoundEngine = {
   },
 
   getSelectionState(message = '') {
-    const layerConfig = LAYER_CONFIG[this.gameState?.currentLayer] ?? LAYER_CONFIG[20]
-    const maxCards = layerConfig.slots ?? 1
+    const maxCards = maxSelectedCardsForLayer(this.gameState?.currentLayer)
     const gasPool = this.gameState?.gasPool ?? 0
     const selectedCards = this.getSelectedCards()
     const selectedGas = selectedCards.reduce((sum, card) => sum + (this.decisionDraft.gasAllocations[card.id] ?? card.gasCost), 0)
@@ -359,7 +362,7 @@ export const RoundEngine = {
     if (!this._paused || !this.isPausablePhase() || !this._timerDone) return
 
     this._paused = false
-    this.startPhaseTimer(this._timerRemainingMs, this._timerDone, this.gameState.phase === 'scan' ? 'Scanning' : null)
+    this.startPhaseTimer(this._timerRemainingMs, this._timerDone, this.gameState.phase === 'scan' ? '扫描中' : null)
   },
 
   isPausablePhase() {
@@ -381,8 +384,6 @@ export const RoundEngine = {
     this.gameState.currentScene = layerConfig.scene ?? layerConfig.scenes?.[0] ?? 'dex_arb'
     this.gameState.gasPoolMax = this.gameState.gasPoolMaxForStage(targetLayer)
     this.gameState.gasPool = this.gameState.gasPoolMax
-    unlockAgentsForLayer(this.gameState, targetLayer)
-    this.gameState.activeAgents = this.gameState.unlockedAgents.slice(0, layerConfig.slots)
     this.gameState.saveProgress()
 
     ProgressionEngine.startRun(this.gameState)
@@ -448,14 +449,6 @@ export const RoundEngine = {
     this._timerDone = null
     this._paused = false
   },
-}
-
-function unlockAgentsForLayer(gameState, layer) {
-  Object.entries(LAYER_CONFIG).forEach(([layerNumber, config]) => {
-    if (Number(layerNumber) <= layer && config.unlocks) {
-      gameState.unlockAgent(config.unlocks)
-    }
-  })
 }
 
 function buildEmergencyResult(cards, error) {

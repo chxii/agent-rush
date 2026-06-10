@@ -228,7 +228,7 @@ function createScriptedSimulatorFactory(script = {}) {
               invalid: true,
               tool: 'broadcast_tx',
               cardId: params.cardId,
-              message: 'Insufficient gas pool for broadcast.',
+              message: 'Gas 池不足，无法广播交易。',
               requestedGas: params.gas,
               remainingGasPool: simulator.state.gasPool,
             }
@@ -250,7 +250,7 @@ function settleScripted(state, params, status, stolen = false) {
   card.allocatedGas = gas
   card.status = status
   card.actualProfit = status === 'success' ? card.expectedProfit : -gas / 1000
-  card.resultReason = stolen ? 'Target stolen by Phantom.' : status === 'success' ? 'Transaction confirmed on chain.' : 'Transaction reverted.'
+  card.resultReason = stolen ? '目标被 Phantom 抢走。' : status === 'success' ? '交易已在链上确认。' : '交易回滚。'
 
   return {
     success: status === 'success',

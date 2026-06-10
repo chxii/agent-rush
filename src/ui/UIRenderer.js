@@ -1,5 +1,6 @@
 import { SCENES } from '../config/scenes.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
+import { ROLE_CONFIG } from '../config/roles.js'
 import { calculateWinLossProgress } from '../core/WinLoss.js'
 
 const elements = {
@@ -108,49 +109,48 @@ export const UIRenderer = {
     const progress = calculateWinLossProgress(gameState)
     elements.header.innerHTML = `
       <div>
-        <p class="label">Layer</p>
+        <p class="label">层数</p>
         <strong>${gameState.currentLayer}</strong>
       </div>
       <div>
-        <p class="label">Scene</p>
+        <p class="label">场景</p>
         <strong>${sceneName}</strong>
       </div>
       <div>
-        <p class="label">Gas Pool</p>
+        <p class="label">Gas 池</p>
         <strong>${gameState.gasPool} / ${gameState.gasPoolMax}</strong>
       </div>
       <div>
-        <p class="label">Profit</p>
+        <p class="label">收益</p>
         <strong>${formatEth(gameState.cumulativeProfit)}</strong>
       </div>
       <div>
-        <p class="label">Victory Line</p>
-        <strong>${formatUnsignedEth(progress.victory.profitRemaining)} left</strong>
-        <small>${progress.victory.layersRemaining} layer${progress.victory.layersRemaining === 1 ? '' : 's'} to ${progress.victory.targetLayer}</small>
+        <p class="label">胜利线</p>
+        <strong>还差 ${formatUnsignedEth(progress.victory.profitRemaining)}</strong>
+        <small>距离第 ${progress.victory.targetLayer} 层还差 ${progress.victory.layersRemaining} 层</small>
       </div>
       <div>
-        <p class="label">Loss Line</p>
-        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold} losses</strong>
-        <small>${progress.failure.lossesRemaining} loss${progress.failure.lossesRemaining === 1 ? '' : 'es'} left</small>
+        <p class="label">失败线</p>
+        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold} 连亏</strong>
+        <small>还能再亏 ${progress.failure.lossesRemaining} 次</small>
       </div>
     `
 
-    this.renderAgents(gameState)
+    this.renderRole(gameState)
   },
 
-  renderAgents(gameState) {
-    elements.agentPanel.innerHTML = gameState.unlockedAgents
-      .map((agentId) => {
-        const isActive = gameState.activeAgents.includes(agentId)
-        const level = gameState.agentLevels[agentId] ?? 1
-        return `
-          <div class="agent ${isActive ? 'active' : ''}">
-            <span>${agentLabel(agentId)}</span>
-            <b>Lv.${level}</b>
-          </div>
-        `
-      })
-      .join('')
+  renderRole(gameState) {
+    const role = ROLE_CONFIG.roles[gameState.role]
+    elements.agentPanel.innerHTML = `
+      <div class="agent active">
+        <span>${role?.name ?? '未选择角色'}</span>
+        <b>Lv.${gameState.roleLevel ?? 1}</b>
+      </div>
+      <div class="agent">
+        <span>${role?.tagline ?? '请选择起始角色'}</span>
+        <b>${role?.buffSummary ?? ''}</b>
+      </div>
+    `
   },
 
   renderHand(cards, selectedIds = [], options = {}) {
@@ -177,9 +177,9 @@ export const UIRenderer = {
             </span>
             <strong>${formatEth(card.expectedProfit)}</strong>
             <span class="metric">Gas ${card.gasCost} Gwei</span>
-            <span class="metric risk-${riskBucket(card.displayedRisk)}">Risk ${riskPercent}%</span>
-            <span class="metric">Window ${card.timeWindowSec}s</span>
-            <span class="reason">${card.isScam ? '! ' : ''}${card.riskReason}</span>
+            <span class="metric risk-${riskBucket(card.displayedRisk)}">风险 ${riskPercent}%</span>
+            <span class="metric">窗口 ${card.timeWindowSec}s</span>
+            <span class="reason">${card.riskReason}</span>
             ${isSelected && isPlayable ? renderDecisionControls(card, gasValue, contingencyValue) : ''}
             ${disabledReason ? `<span class="blocked-reason">${disabledReason}</span>` : ''}
           </${tagName}>
@@ -213,7 +213,7 @@ export const UIRenderer = {
     elements.selectionStatus.innerHTML = `
       <p class="label">选牌限制</p>
       <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gwei</strong>
-      <small>Remaining ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gwei</small>
+      <small>剩余 ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gwei</small>
       ${status.message ? `<span>${status.message}</span>` : ''}
     `
   },
@@ -232,10 +232,10 @@ export const UIRenderer = {
     elements.interventionPanel.innerHTML = `
       <form class="intervention-form">
         <label>
-          <span class="label">Intervention</span>
-          <input data-intervention-input type="text" placeholder="Tell Executor what to change" ${disabled ? 'disabled' : ''}>
+          <span class="label">干预</span>
+          <input data-intervention-input type="text" placeholder="告诉 Executor 要调整什么" ${disabled ? 'disabled' : ''}>
         </label>
-        <button class="secondary-button" type="submit" ${disabled ? 'disabled' : ''}>Send</button>
+        <button class="secondary-button" type="submit" ${disabled ? 'disabled' : ''}>发送</button>
       </form>
       <div class="intervention-shortcuts">
         ${Object.values(INTERVENTION_SHORTCUTS)
@@ -308,11 +308,11 @@ function renderDecisionControls(card, gasValue, contingencyValue) {
         <input data-gas-card-id="${card.id}" type="number" min="0" step="1" value="${gasValue}">
       </label>
       <label>
-        <span>Plan</span>
+        <span>预案</span>
         <select data-contingency-card-id="${card.id}">
-          ${contingencyOption('fight', 'Fight', contingencyValue)}
-          ${contingencyOption('abandon', 'Abandon', contingencyValue)}
-          ${contingencyOption('transfer', 'Transfer', contingencyValue)}
+          ${contingencyOption('fight', '硬刚', contingencyValue)}
+          ${contingencyOption('abandon', '放弃', contingencyValue)}
+          ${contingencyOption('transfer', '转移', contingencyValue)}
         </select>
       </label>
     </span>
@@ -323,24 +323,13 @@ function contingencyOption(value, label, selectedValue) {
   return `<option value="${value}" ${value === selectedValue ? 'selected' : ''}>${label}</option>`
 }
 
-function agentLabel(agentId) {
-  const labels = {
-    searcher: 'Searcher',
-    riskAnalyzer: 'Risk Analyzer',
-    executor: 'Executor',
-    strategist: 'Strategist',
-  }
-
-  return labels[agentId] ?? agentId
-}
-
 function typeLabel(type) {
   const labels = {
-    arbitrage: 'Arbitrage',
-    sandwich: 'Sandwich',
-    nft_snipe: 'NFT Snipe',
-    front_run: 'Front-run',
-    liquidation: 'Liquidation',
+    arbitrage: '套利',
+    sandwich: '夹击',
+    nft_snipe: 'NFT 抢购',
+    front_run: '抢跑',
+    liquidation: '清算',
   }
 
   return labels[type] ?? type
