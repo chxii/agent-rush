@@ -2,7 +2,9 @@ import { BOTS } from '../config/bots.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import {
   BOT_STRENGTH_BY_NAME,
+  CARD_TYPE_MECHANICS,
   CARD_TYPE_TOOL_SENSITIVITY,
+  DEFAULT_CARD_TYPE_MECHANICS,
   TOOL_SIMULATOR_CONFIG,
 } from '../config/toolSimulator.js'
 import { createRandomSource } from './rng.js'
@@ -135,10 +137,31 @@ function broadcastTx(state, params, rng, config) {
     })
   }
 
+  const mechanics = mechanicsFor(card.type)
   card.status = 'in_progress'
   card.allocatedGas = gas
 
-  const competition = state.competitors[card.id] ?? calculateCompetition(state, card, rng, config, false)
+  if (isHardTimeWindowExpired(card, params, mechanics)) {
+    spendGas(state, card, gas)
+    const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
+    settleCard(card, 'failed', loss, 'Liquidation deadline expired before broadcast.')
+    return {
+      success: false,
+      tool: 'broadcast_tx',
+      cardId: card.id,
+      message: card.resultReason,
+      status: card.status,
+      stolen: false,
+      windowExpired: true,
+      actualProfit: card.actualProfit,
+      actualGasConsumed: gas,
+      remainingGasPool: state.gasPool,
+      successProbability: 0,
+      stealProbability: 0,
+    }
+  }
+
+  const competition = resolveCompetition(state, card, params, rng, config)
   state.competitors[card.id] = competition
   const stolen = competition.competitorDetected && rng() < competition.stealProbability
 
@@ -162,11 +185,12 @@ function broadcastTx(state, params, rng, config) {
     }
   }
 
-  const successProbability = calculateBroadcastSuccessProbability(state, card, gas, config)
+  const successProbability = calculateBroadcastSuccessProbability(state, card, gas, competition, config)
   const txSucceeded = rng() < successProbability
 
   if (txSucceeded) {
-    const multiplier = 1 + randomBetween(rng, -config.broadcast.profitVariance, config.broadcast.profitVariance)
+    const profitVariance = mechanics.profitVariance ?? config.broadcast.profitVariance
+    const multiplier = 1 + randomBetween(rng, -profitVariance, profitVariance)
     settleCard(card, 'success', roundEth(card.expectedProfit * multiplier), 'Transaction confirmed on chain.')
   } else {
     const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
@@ -185,6 +209,8 @@ function broadcastTx(state, params, rng, config) {
     remainingGasPool: state.gasPool,
     successProbability,
     stealProbability: competition.stealProbability,
+    bidPosition: competition.bidPosition ?? 'not_compared',
+    windowExpired: false,
   }
 }
 
@@ -214,7 +240,9 @@ function replaceTx(state, params, rng, config) {
   }
 
   const competitor = state.competitors[card.id] ?? calculateCompetition(state, card, rng, config, false)
-  const requiredBid = Math.ceil((competitor.competitorGasBid || oldGas) * config.replace.requiredBidMultiplier)
+  const mechanics = mechanicsFor(card.type)
+  const requiredBidMultiplier = mechanics.replaceRequiredBidMultiplier ?? config.replace.requiredBidMultiplier
+  const requiredBid = Math.ceil((competitor.competitorGasBid || oldGas) * requiredBidMultiplier)
   const bidAdvantage = Math.max(0, newGas - requiredBid) / Math.max(requiredBid, 1)
   const suppressProbability = clamp(
     config.replace.baseSuppressProbability + bidAdvantage * config.replace.bidAdvantageWeight,
@@ -339,12 +367,14 @@ function calculateCompetition(state, card, rng, config, sampled) {
   }
 
   const sensitivity = sensitivityFor(card.type)
+  const mechanics = mechanicsFor(card.type)
   const gasDefense = (card.allocatedGas ?? card.gasCost ?? 0) * config.mempool.gasDefenseWeight
   const stealProbability = clamp01(
     (state.botStrength * config.mempool.botStrengthWeight +
       (card.competitionLevel ?? 0) * config.mempool.competitionWeight -
       gasDefense) *
-      sensitivity.mempool,
+      sensitivity.mempool *
+      mechanics.stealProbabilityMultiplier,
   )
   const detectionChance = clamp01(config.mempool.detectionBase + stealProbability)
   const competitorDetected = sampled ? rng() < detectionChance : stealProbability > 0
@@ -359,14 +389,34 @@ function calculateCompetition(state, card, rng, config, sampled) {
   }
 }
 
-function calculateBroadcastSuccessProbability(state, card, gas, config) {
+function resolveCompetition(state, card, params, rng, config) {
+  const calculated = state.competitors[card.id] ?? calculateCompetition(state, card, rng, config, false)
+  if (params.competitorGasBid === undefined && params.competitorGasBidGwei === undefined) return calculated
+
+  const competitorGasBid = clampInt(params.competitorGasBid ?? params.competitorGasBidGwei, 0)
+  return {
+    ...calculated,
+    competitorDetected: competitorGasBid > 0,
+    competitorGasBid,
+    stealProbability: clamp01(params.stealProbability ?? calculated.stealProbability),
+  }
+}
+
+function calculateBroadcastSuccessProbability(state, card, gas, competition, config) {
   const sensitivity = sensitivityFor(card.type)
+  const mechanics = mechanicsFor(card.type)
   const gasRatio = gas / Math.max(card.gasCost ?? gas, 1)
-  const probability =
+  let probability =
     config.broadcast.baseSuccessProbability +
-    Math.min(gasRatio, 2) * config.broadcast.gasWeight -
+    Math.min(gasRatio, 2) * config.broadcast.gasWeight * mechanics.gasSuccessWeight -
     (card.trueRisk ?? card.displayedRisk ?? 0) * config.broadcast.riskPenalty -
     state.botStrength * config.broadcast.botPressurePenalty
+
+  if (mechanics.frontRunBidCheck && competition.competitorDetected) {
+    const outbidCompetitor = gas >= competition.competitorGasBid
+    competition.bidPosition = outbidCompetitor ? 'overbid' : 'underbid'
+    probability += outbidCompetitor ? mechanics.frontRunOverbidBonus : -mechanics.frontRunUnderbidPenalty
+  }
 
   return round(
     clamp(
@@ -376,6 +426,14 @@ function calculateBroadcastSuccessProbability(state, card, gas, config) {
     ),
     4,
   )
+}
+
+function isHardTimeWindowExpired(card, params, mechanics) {
+  if (!mechanics.hardTimeWindow) return false
+  if (params.windowExpired === true) return true
+  if (Number.isFinite(params.elapsedSec) && params.elapsedSec > (card.timeWindowSec ?? 0)) return true
+  if (Number.isFinite(params.remainingTimeWindowSec) && params.remainingTimeWindowSec <= 0) return true
+  return false
 }
 
 function getMutableCard(state, cardId, tool) {
@@ -427,6 +485,13 @@ function activeBotForLayer(layer) {
 
 function sensitivityFor(type) {
   return CARD_TYPE_TOOL_SENSITIVITY[type] ?? { price: 1, mempool: 1, broadcast: 1 }
+}
+
+function mechanicsFor(type) {
+  return {
+    ...DEFAULT_CARD_TYPE_MECHANICS,
+    ...(CARD_TYPE_MECHANICS[type] ?? {}),
+  }
 }
 
 function snapshotState(state) {
