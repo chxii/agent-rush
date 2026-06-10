@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { TOOL_SIMULATOR_CONFIG } from '../src/config/toolSimulator.js'
 import { createToolSimulator } from '../src/core/ToolSimulator.js'
 import { createSequenceRng } from '../src/core/rng.js'
 
@@ -85,6 +86,45 @@ test('arbitrage has lower steal probability than nft_snipe under the same pressu
   assert.ok(nft.stealProbability > arbitrage.stealProbability * 2)
 })
 
+test('Genesis competitor bid is higher while non-Genesis keeps the default bid curve', () => {
+  const phantom = monitor('front_run', { botName: 'Phantom', rng: createSequenceRng([0]) })
+  const genesis = monitor('front_run', { botName: 'Genesis', rng: createSequenceRng([0]) })
+  const defaultBid = Math.ceil(40 * TOOL_SIMULATOR_CONFIG.mempool.competitorBidMultiplier + TOOL_SIMULATOR_CONFIG.mempool.competitorBidMinLift)
+
+  assert.equal(phantom.competitorGasBid, defaultBid)
+  assert.ok(genesis.competitorGasBid > phantom.competitorGasBid)
+})
+
+test('Genesis replace_tx cannot reach the default suppression ceiling', () => {
+  const phantom = replaceWithHugeBid('Phantom')
+  const genesis = replaceWithHugeBid('Genesis')
+
+  assert.equal(phantom.suppressProbability, TOOL_SIMULATOR_CONFIG.replace.maxSuppressProbability)
+  assert.equal(
+    genesis.suppressProbability,
+    TOOL_SIMULATOR_CONFIG.botMechanicOverrides.Genesis.maxSuppressProbability,
+  )
+  assert.ok(genesis.suppressProbability < phantom.suppressProbability)
+})
+
+test('forced steal is injected into ToolSimulator without reading EnemyBotAI globals', () => {
+  const simulator = createToolSimulator({
+    cards: [cardOfType('front_run')],
+    gasPool: 120,
+    botName: 'Phantom',
+    rng: createSequenceRng([0.999]),
+    forceSteal: true,
+    allocations: [{ cardId: 'front_run_card', gas: 40 }],
+  })
+
+  const forced = simulator.execute('monitor_mempool', { cardId: 'front_run_card' })
+  const next = simulator.execute('monitor_mempool', { cardId: 'front_run_card' })
+
+  assert.equal(forced.competitorDetected, true)
+  assert.equal(forced.stealProbability, 1)
+  assert.equal(next.competitorDetected, false)
+})
+
 test('unknown card type falls back to default mechanics without crashing', () => {
   const simulator = createToolSimulator({
     cards: [
@@ -121,15 +161,28 @@ function runBroadcast(type, overrides = {}) {
   return { simulator, result }
 }
 
-function monitor(type) {
+function monitor(type, options = {}) {
   const simulator = createToolSimulator({
     cards: [cardOfType(type)],
     gasPool: 120,
     layer: 8,
-    rng: createSequenceRng([0]),
+    botName: options.botName,
+    rng: options.rng ?? createSequenceRng([0]),
     allocations: [{ cardId: `${type}_card`, gas: 40 }],
   })
   return simulator.execute('monitor_mempool', { cardId: `${type}_card` })
+}
+
+function replaceWithHugeBid(botName) {
+  const simulator = createToolSimulator({
+    cards: [cardOfType('front_run')],
+    gasPool: 1000,
+    botName,
+    rng: createSequenceRng([0.999]),
+    allocations: [{ cardId: 'front_run_card', gas: 40 }],
+  })
+  simulator.execute('monitor_mempool', { cardId: 'front_run_card' })
+  return simulator.execute('replace_tx', { cardId: 'front_run_card', newGas: 500 })
 }
 
 function collectSuccessfulProfits(type) {

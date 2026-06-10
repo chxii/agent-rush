@@ -37,6 +37,12 @@ export const TOOL_SIMULATOR_CONFIG = {
   replacement: {
     minExpectedValue: 0,
   },
+  botMechanicOverrides: {
+    Genesis: {
+      maxSuppressProbability: 0.6,
+      competitorBidMultiplier: 1.3,
+    },
+  },
 }
 
 export const BOT_STRENGTH_BY_NAME = {

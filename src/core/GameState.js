@@ -18,6 +18,7 @@ const DEFAULT_STATE = {
   cumulativeProfit: 0,
   consecutiveLoss: 0,
   phase: 'idle',
+  // Reserved for a future enemy-learning mock. B3 has no runtime read/write logic for it.
   genesisHistory: { lastTwoRounds: [], boostedType: null },
   tutorialSeen: false,
   seenBots: [],

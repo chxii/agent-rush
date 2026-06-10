@@ -32,6 +32,7 @@ export async function runBatchSimulation(options = {}) {
       botName: options.botName,
       simulatorFactory: options.simulatorFactory,
       config: options.config,
+      toolConfig: options.toolConfig,
     },
   )
 

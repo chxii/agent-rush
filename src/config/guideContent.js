@@ -114,6 +114,6 @@ export const BOT_GUIDE = {
     layers: '第 18-20 层',
     order: 5,
     threat: '极高',
-    style: '终局压力对手。学习行为留到后续阶段实现。',
+    style: '终局压力对手：出价极凶，反抢需要更高 Gas，且无法被完全压制。学习行为留到后续阶段实现。',
   },
 }

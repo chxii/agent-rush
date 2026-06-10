@@ -143,6 +143,7 @@ export const RoundEngine = {
     try {
       this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
         interventionState: this.interventionState,
+        forceSteal: () => EnemyBotAI.consumeForcedSteal(),
         onExecutionComplete: () => {
           this._interventionOpen = false
           UIRenderer.setInterventionState(null)

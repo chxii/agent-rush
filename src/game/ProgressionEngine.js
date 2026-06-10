@@ -28,7 +28,6 @@ export const ProgressionEngine = {
 
   afterRound(roundResult, gameState) {
     gameState.applyRoundResult(roundResult.netProfit)
-    EnemyBotAI.updateGenesisHistory(gameState, roundResult.cards)
 
     if (gameState.checkFailure()) {
       OverlayManager.showGameOver(buildFinalStats(gameState), () => restartGame(gameState))
@@ -114,7 +113,6 @@ function restartGame(gameState) {
   gameState.gasPool = gameState.gasPoolMax
   gameState.cumulativeProfit = 0
   gameState.consecutiveLoss = 0
-  gameState.genesisHistory = { lastTwoRounds: [], boostedType: null }
   gameState.saveProgress()
   OverlayManager.hideAll()
   ProgressionEngine.startRun(gameState)
