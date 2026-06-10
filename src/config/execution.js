@@ -1,6 +1,6 @@
 export const SEMI_LOOP_CONFIG = {
   maxReplansPerRound: 4,
-  toolDelayMs: 650,
+  toolDelayMs: 1400,
   simulatedToolElapsedSec: 1,
 }
 

@@ -94,6 +94,7 @@ export async function runSemiLoopExecution(battlePlan, context = {}, options = {
   const baseResult = buildRoundResult(completedCards, executionLog, telemetry.incidents, telemetry.deciderCalls, {
     gasUsed: finalState.gasUsed,
   })
+  await emit(options, 'onExecutionComplete', { result: baseResult, telemetry, finalState })
   const settlementReport = await summarizeSafely(decider, fallbackDecider, {
     completedCards: completedCards.map(toCompletedCard),
     executionLog,

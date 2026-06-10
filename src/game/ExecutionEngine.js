@@ -45,13 +45,15 @@ export const ExecutionEngine = {
         config: options.config ?? SEMI_LOOP_CONFIG,
         interventionState: options.interventionState,
         delay: (ms) => delay(ms),
-        hooks: createUiHooks(),
+        hooks: createUiHooks({
+          onExecutionComplete: options.onExecutionComplete,
+        }),
       },
     )
   },
 }
 
-function createUiHooks() {
+function createUiHooks(options = {}) {
   return {
     onCardStart({ card }) {
       ThoughtChainPanel.startCard(card)
@@ -90,6 +92,9 @@ function createUiHooks() {
         text: `[自动保底] ${fallbackReason(reason)}：${snapshot?.affectedCardId ?? ''}${error ? ` (${error.message})` : ''}`,
         isStreaming: false,
       })
+    },
+    onExecutionComplete(payload) {
+      options.onExecutionComplete?.(payload)
     },
   }
 }
