@@ -16,7 +16,35 @@ const SYSTEM_PROMPT = [
   'Do not wrap the JSON in Markdown or add extra prose.',
   'Use concise Chinese in display fields such as reasoning and summary.',
   'Each decision should show task decomposition, multi-step planning, or iterative repair.',
+  'Gas is allocated by the player. Never invent or return gas allocations unless the call type explicitly asks for a reallocation after an incident.',
 ].join('\n')
+
+const OUTPUT_CONTRACTS = {
+  InitialPlanning: [
+    'Output schema:',
+    '{ "reasoning": string, "executionOrder": string[] }',
+    'executionOrder must contain only selected card ids from input.cards.',
+    'Do not include gasAllocations.',
+  ].join('\n'),
+  SingleCardPlan: [
+    'Output schema:',
+    '{ "reasoning": string, "action": "fetch_prices"|"broadcast_tx"|"replace_tx"|"monitor_mempool"|"scan_replacement"|"abandon_card"|"reallocate_gas", "params"?: object }',
+    'Return exactly one next action, not a steps array.',
+  ].join('\n'),
+  IncidentResponse: [
+    'Output schema:',
+    '{ "reasoning": string, "action": "continue"|"retry_broadcast"|"replace_tx"|"abandon_card"|"reallocate_gas"|"skip_card", "targetCardId"?: string, "gas"?: integer, "gasAllocations"?: [{ "cardId": string, "gas": integer }], "updatedExecutionOrder"?: string[] }',
+    'Return one narrow recovery action or remaining-plan adjustment. Use input.playerContingency as the affected card owner intent.',
+  ].join('\n'),
+  PlayerIntervention: [
+    'Output schema:',
+    '{ "reasoning": string, "interpretedIntent": string, "updatedGasAllocations": [{ "cardId": string, "gas": integer }], "updatedExecutionOrder": string[] }',
+  ].join('\n'),
+  SettlementReport: [
+    'Output schema:',
+    '{ "reasoning": string, "summary": string, "netProfit": number, "decisionHighlights": [{ "momentLabel": "task_decomposition"|"multi_step_planning"|"tool_call"|"iterative_repair"|"workflow_closure", "description": string }] }',
+  ].join('\n'),
+}
 
 const _cache = new Map()
 
@@ -393,6 +421,7 @@ function buildUserPrompt(callType, input) {
   return [
     `callType: ${callType}`,
     'Return only the output JSON object for this call type.',
+    OUTPUT_CONTRACTS[callType] ?? '',
     'Input:',
     JSON.stringify(input),
   ].join('\n')

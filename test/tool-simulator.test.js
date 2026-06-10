@@ -127,10 +127,10 @@ test('broadcast_tx success distribution tracks the configured probability', () =
   assert.ok(Math.abs(observed - expectedProbability) < 0.05, `observed=${observed}, expected=${expectedProbability}`)
 })
 
-test('fixed seed batch simulation is reproducible', () => {
-  const first = runBatchSimulation({ seed: 'a1-seed' })
-  const second = runBatchSimulation({ seed: 'a1-seed' })
-  const third = runBatchSimulation({ seed: 'different-seed' })
+test('fixed seed batch simulation is reproducible', async () => {
+  const first = await runBatchSimulation({ seed: 'a1-seed' })
+  const second = await runBatchSimulation({ seed: 'a1-seed' })
+  const third = await runBatchSimulation({ seed: 'different-seed' })
 
   assert.deepEqual(first, second)
   assert.notDeepEqual(first, third)

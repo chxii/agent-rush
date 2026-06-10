@@ -1,7 +1,6 @@
 import { generateHand, injectScamCardNextHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
-import { battlePlanToGasAllocationArray, createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
-import { ExecutorAI } from '../ai/ExecutorAI.js'
+import { createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
@@ -62,7 +61,7 @@ export const RoundEngine = {
   startScan() {
     ThoughtChainPanel.clear()
     this.selectedIds.clear()
-    UIRenderer.setExecutionMode('rigid')
+    UIRenderer.setExecutionMode('semi-loop')
     UIRenderer.renderHand([], [])
     UIRenderer.setPlayEnabled(false)
     UIRenderer.setTimerText('Scanning')
@@ -115,20 +114,24 @@ export const RoundEngine = {
     this.startPhaseTimer(this.roundConfig.playMs ?? DEFAULT_PLAY_MS, () => this.transition('execute'))
   },
 
-  async startExecute(
-    selectedCards = this.battlePlan?.selectedCards ?? this.getSelectedCards(),
-    gasAllocations = this.battlePlan ? battlePlanToGasAllocationArray(this.battlePlan) : this.getGasAllocations(selectedCards),
-  ) {
+  async startExecute() {
+    const battlePlan =
+      this.battlePlan ??
+      createBattlePlan({
+        selectedCards: this.getSelectedCards(),
+        gasAllocations: this.decisionDraft.gasAllocations,
+        contingencies: this.decisionDraft.contingencies,
+      })
+    const selectedCards = battlePlan.selectedCards
+
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], { phase: 'execute' })
     UIRenderer.setPlayEnabled(false)
     UIRenderer.setSelectionStatus(null)
     UIRenderer.setTimerText('Executing')
-    UIRenderer.setExecutionMode(this.isAdaptiveMode() ? 'adaptive' : 'rigid')
+    UIRenderer.setExecutionMode('semi-loop')
 
     try {
-      this.roundResult = this.isAdaptiveMode()
-        ? await ExecutionEngine.runAdaptiveMode(selectedCards, this.gameState, ExecutorAI, this.battlePlan)
-        : await ExecutionEngine.runRigidMode(selectedCards, gasAllocations, this.gameState)
+      this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState)
     } catch (error) {
       ThoughtChainPanel.appendLog({
         timestampMs: Date.now(),
@@ -199,7 +202,7 @@ export const RoundEngine = {
           gasAllocations: this.decisionDraft.gasAllocations,
           contingencies: this.decisionDraft.contingencies,
         })
-    this.gasAllocations = this.battlePlan ? battlePlanToGasAllocationArray(this.battlePlan) : []
+    this.gasAllocations = Object.entries(this.battlePlan.gasAllocations).map(([cardId, gas]) => ({ cardId, gas }))
     this.transition('execute')
   },
 
@@ -316,14 +319,6 @@ export const RoundEngine = {
 
   getSelectedCards() {
     return this.currentHand.filter((card) => this.selectedIds.has(card.id))
-  },
-
-  getGasAllocations(cards) {
-    return cards.map((card) => ({ cardId: card.id, gas: card.gasCost }))
-  },
-
-  isAdaptiveMode() {
-    return this.gameState?.activeAgents.includes('executor')
   },
 
   jumpToLayer(layer) {
