@@ -41,6 +41,12 @@ export const EnemyBotAI = {
     forceStealNextCompetition = true
   },
 
+  consumeForcedSteal() {
+    if (!forceStealNextCompetition) return false
+    forceStealNextCompetition = false
+    return true
+  },
+
   updateGenesisHistory(gameState, roundCards) {
     const record = {
       scene: gameState.currentScene,

@@ -3,57 +3,64 @@
 import { fileURLToPath } from 'node:url'
 
 import { RuleDecider } from '../src/core/RuleDecider.js'
-import { createToolSimulator } from '../src/core/ToolSimulator.js'
+import { runSemiLoopExecution } from '../src/core/SemiLoopExecutor.js'
 
-export function runBatchSimulation(options = {}) {
+export async function runBatchSimulation(options = {}) {
   const seed = options.seed ?? 42
   const cards = options.cards ?? createSampleCards()
+  const gasPool = options.gasPool ?? 180
   const decision = RuleDecider.createBattlePlan(cards, {
-    gasPool: options.gasPool ?? 180,
+    gasPool,
     maxCards: options.maxCards ?? cards.length,
   })
-  const selectedCards = decision.battlePlan.selectedCards
-  const simulator = createToolSimulator({
-    seed,
-    cards: selectedCards,
-    gasPool: options.gasPool ?? 180,
-    layer: options.layer ?? 8,
-    allocations: Object.entries(decision.battlePlan.gasAllocations).map(([cardId, gas]) => ({ cardId, gas })),
-  })
+  const result = await runSemiLoopExecution(
+    decision.battlePlan,
+    {
+      gasPool,
+      layer: options.layer ?? 8,
+      scene: options.scene ?? 'nft_market',
+    },
+    {
+      decider: options.decider ?? RuleDecider,
+      fallbackDecider: options.fallbackDecider ?? RuleDecider,
+      seed,
+      maxReplans: options.maxReplans,
+      botName: options.botName,
+      simulatorFactory: options.simulatorFactory,
+      config: options.config,
+    },
+  )
 
-  const toolResults = []
-  for (const card of selectedCards) {
-    toolResults.push(simulator.execute('fetch_prices', { cardId: card.id }))
-    toolResults.push(simulator.execute('monitor_mempool', { cardId: card.id }))
-    toolResults.push(simulator.execute('broadcast_tx', { cardId: card.id, gas: decision.battlePlan.gasAllocations[card.id] }))
-  }
-
-  const snapshot = simulator.snapshot()
   return {
     status: 'ok',
     seed,
     battlePlan: {
-      selectedCardIds: selectedCards.map((card) => card.id),
+      selectedCardIds: decision.battlePlan.selectedCards.map((card) => card.id),
       gasAllocations: decision.battlePlan.gasAllocations,
       contingencies: decision.battlePlan.contingencies,
       valid: decision.validation.valid,
     },
     summary: {
-      cards: snapshot.cards.length,
-      successes: snapshot.cards.filter((card) => card.status === 'success').length,
-      failures: snapshot.cards.filter((card) => card.status === 'failed').length,
-      abandoned: snapshot.cards.filter((card) => card.status === 'abandoned').length,
-      gasUsed: snapshot.gasUsed,
-      remainingGasPool: snapshot.gasPool,
-      netProfit: round(snapshot.cards.reduce((sum, card) => sum + (card.actualProfit ?? 0), 0)),
+      cards: result.cards.length,
+      successes: result.cards.filter((card) => card.status === 'success').length,
+      failures: result.cards.filter((card) => card.status === 'failed').length,
+      abandoned: result.cards.filter((card) => card.status === 'abandoned').length,
+      gasUsed: result.gasUsed,
+      remainingGasPool: result.finalState.gasPool,
+      netProfit: result.netProfit,
+      incidents: result.incidents.length,
+      replans: result.telemetry.replans,
+      fallbackReplans: result.telemetry.fallbackReplans,
     },
-    toolResults,
-    finalState: snapshot,
+    incidents: result.incidents,
+    telemetry: result.telemetry,
+    executionLog: result.executionLog,
+    finalState: result.finalState,
   }
 }
 
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
-  const result = runBatchSimulation({ seed: parseSeedArg(process.argv) })
+  const result = await runBatchSimulation({ seed: parseSeedArg(process.argv) })
   console.log(JSON.stringify(result, null, 2))
 }
 
@@ -96,8 +103,4 @@ function parseSeedArg(argv) {
   if (inlineSeed) return inlineSeed.slice('--seed='.length)
 
   return 42
-}
-
-function round(value) {
-  return Math.round(value * 1000) / 1000
 }

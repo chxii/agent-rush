@@ -91,8 +91,8 @@ test('RuleDecider creates a legal battle plan and can enter a headless execution
   assert.ok(['success', 'failed'].includes(result.status))
 })
 
-test('batch sim uses a valid RuleDecider battle plan', () => {
-  const result = runBatchSimulation({ seed: 'a3-seed' })
+test('batch sim uses a valid RuleDecider battle plan', async () => {
+  const result = await runBatchSimulation({ seed: 'a3-seed' })
 
   assert.equal(result.status, 'ok')
   assert.equal(result.battlePlan.valid, true)

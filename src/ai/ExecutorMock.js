@@ -23,88 +23,58 @@ export function getFallbackPlan(callType, input = {}) {
   if (callType === 'SettlementReport') return buildSettlementReport(input)
   if (callType === 'PlayerIntervention') return buildPlayerIntervention(input)
 
-  return { reasoning: '未识别的执行请求，使用保底策略继续。' }
+  return { reasoning: 'Unknown executor request; using safe fallback.' }
 }
 
 function buildInitialPlanning(input) {
   const cards = [...(input.cards ?? [])]
   const executionOrder = cards.sort((a, b) => b.expectedProfit - a.expectedProfit).map((card) => card.id)
-  const gasAllocations = allocateGasEvenly(executionOrder, input.totalGasPool ?? 0)
 
   return {
-    reasoning: '分析牌组的利润和时间窗口。高收益目标先执行，剩余Gas按牌数均等分配。',
+    reasoning: 'Order selected cards by expected value. Player gas allocations stay unchanged.',
     executionOrder,
-    gasAllocations,
   }
 }
 
 function buildSingleCardPlan(input) {
   const card = input.card ?? {}
-  const stepsByType = {
-    arbitrage: [
-      ['fetch_prices', '抓取两个DEX价格差'],
-      ['broadcast_tx', '提交套利交易'],
-    ],
-    sandwich: [
-      ['monitor_mempool', '监听目标交易排序'],
-      ['broadcast_tx', '提交前置交易'],
-      ['replace_tx', '根据区块排序调整出价'],
-    ],
-    nft_snipe: [
-      ['fetch_prices', '刷新NFT挂单价格'],
-      ['monitor_mempool', '确认竞争者报价'],
-      ['broadcast_tx', '提交购买交易'],
-    ],
-    front_run: [
-      ['monitor_mempool', '锁定可抢跑交易'],
-      ['broadcast_tx', '提交更高Gas交易'],
-    ],
-    liquidation: [
-      ['fetch_prices', '读取抵押率和清算价'],
-      ['broadcast_tx', '提交清算交易'],
-    ],
-  }
-
-  const templates = stepsByType[card.type] ?? stepsByType.arbitrage
-  const steps = templates.map(([action, description], index) => ({
-    stepIndex: index + 1,
-    action,
-    description,
-    params: { cardId: card.id, gas: input.allocatedGas ?? card.gasBudget ?? 0 },
-  }))
 
   return {
-    reasoning: `开始执行 ${card.type ?? 'target'}，预期利润 ${formatEth(card.expectedProfit)}。先拆步骤，再逐步确认链上反馈。`,
-    steps,
+    reasoning: `Choose one next action for ${card.type ?? 'target'} from the current observed state.`,
+    action: 'broadcast_tx',
+    params: { cardId: card.id, gas: input.allocatedGas ?? card.gasBudget ?? 0 },
   }
 }
 
 function buildIncidentResponse(input) {
-  const cardId = input.affectedCardId ?? input.card?.id ?? 'unknown'
-  const remainingGasPool = input.remainingGasPool ?? 0
-  const raiseGas = Math.max(1, Math.floor(remainingGasPool * 0.35))
+  const cardId = input.affectedCardId ?? input.trigger?.cardId ?? 'unknown'
+  const remainingGasPool = Math.max(0, Math.round(Number(input.remainingGasPool) || 0))
+  const playerContingency = input.playerContingency ?? 'fight'
+
+  if (playerContingency === 'abandon' || remainingGasPool <= 0) {
+    return {
+      reasoning: 'Follow the player contingency and preserve the remaining plan.',
+      action: 'abandon_card',
+      targetCardId: cardId,
+    }
+  }
+
+  if (input.event === 'gas_insufficient') {
+    return {
+      reasoning: 'Gas is short; reallocate to pending cards that still fit the remaining pool.',
+      action: 'reallocate_gas',
+      targetCardId: cardId,
+      gasAllocations: (input.allCardStatuses ?? [])
+        .filter((card) => card.status === 'pending' && card.allocatedGas <= remainingGasPool)
+        .map((card) => ({ cardId: card.id, gas: card.allocatedGas })),
+    }
+  }
 
   return {
-    reasoning: 'Phantom出价超过我方。剩余Gas仍可支撑，选择提高出价压制；若失败则放弃该牌。',
-    selectedPlanId: 'raise_gas',
-    candidatePlans: [
-      {
-        planId: 'raise_gas',
-        description: '提高Gas出价',
-        gasAllocations: [{ cardId, gas: raiseGas }],
-        expectedOutcome: '压制Phantom并继续执行',
-        estimatedProfit: Number(input.card?.expectedProfit ?? 0),
-        riskLevel: 0.4,
-      },
-      {
-        planId: 'abandon',
-        description: '放弃此牌',
-        gasAllocations: [],
-        expectedOutcome: '保存Gas给后续目标',
-        estimatedProfit: 0,
-        riskLevel: 0,
-      },
-    ],
+    reasoning: 'Return one narrow recovery action for this incident.',
+    action: playerContingency === 'transfer' ? 'continue' : 'replace_tx',
+    targetCardId: cardId,
+    gas: Math.max(1, Math.floor(remainingGasPool * 0.35)),
   }
 }
 
@@ -113,17 +83,13 @@ function buildSettlementReport(input) {
   const netProfit = roundEth(completedCards.reduce((sum, card) => sum + (Number(card.actualProfit) || 0), 0))
 
   return {
-    reasoning: '本轮已闭环，统计每张牌的执行结果和修复动作。',
-    summary: `本轮执行完成，净收益 ${formatSignedEth(netProfit)}。Executor完成排序、分步执行和异常修复。`,
+    reasoning: 'Summarize semi-loop execution after all cards settle.',
+    summary: `Round complete. Net ${formatSignedEth(netProfit)} across ${completedCards.length} cards.`,
     netProfit,
     decisionHighlights: [
       {
-        momentLabel: 'task_decomposition',
-        description: `把 ${completedCards.length} 张牌拆解为独立链上动作，按收益和窗口排序。`,
-      },
-      {
-        momentLabel: 'iterative_repair',
-        description: '目标被抢占时评估提高Gas与放弃两条路径，优先选择可挽回收益的方案。',
+        momentLabel: 'workflow_closure',
+        description: 'Executor followed the semi-loop plan and only replanned after simulator incidents.',
       },
     ],
   }
@@ -133,26 +99,14 @@ function buildPlayerIntervention(input) {
   const state = input.currentExecutionState ?? { allCardStatuses: [] }
 
   return {
-    reasoning: '读取玩家指令后，保持当前执行队列并调整Gas分配。',
-    interpretedIntent: input.playerInstruction ?? '继续执行',
+    reasoning: 'Player intervention is reserved for A5; keep current order for now.',
+    interpretedIntent: input.playerInstruction ?? 'continue',
     updatedGasAllocations: state.allCardStatuses.map((card) => ({
       cardId: card.id,
       gas: card.allocatedGas,
     })),
     updatedExecutionOrder: state.allCardStatuses.map((card) => card.id),
   }
-}
-
-function allocateGasEvenly(cardIds, totalGasPool) {
-  if (cardIds.length === 0) return []
-  const baseGas = Math.floor(totalGasPool / cardIds.length)
-  let remainder = totalGasPool - baseGas * cardIds.length
-
-  return cardIds.map((cardId) => {
-    const extra = remainder > 0 ? 1 : 0
-    remainder -= extra
-    return { cardId, gas: baseGas + extra }
-  })
 }
 
 async function streamText(text, onChunk) {
@@ -170,10 +124,6 @@ function delay(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms)
   })
-}
-
-function formatEth(value) {
-  return `${Number(value ?? 0).toFixed(2)} ETH`
 }
 
 function formatSignedEth(value) {

@@ -1,5 +1,6 @@
 import { BOTS } from '../config/bots.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
+import { EnemyBotAI } from './EnemyBotAI.js'
 import {
   BOT_STRENGTH_BY_NAME,
   CARD_TYPE_MECHANICS,
@@ -363,6 +364,17 @@ function calculateCompetition(state, card, rng, config, sampled) {
       competitorDetected: false,
       competitorGasBid: 0,
       stealProbability: 0,
+    }
+  }
+
+  if (EnemyBotAI.consumeForcedSteal()) {
+    const baseGas = card.allocatedGas ?? card.gasCost ?? 0
+    return {
+      competitorDetected: true,
+      competitorName: state.botName,
+      competitorGasBid: Math.ceil(baseGas * config.mempool.competitorBidMultiplier + config.mempool.competitorBidMinLift),
+      stealProbability: 1,
+      forced: true,
     }
   }
 
