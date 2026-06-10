@@ -1,6 +1,7 @@
 import { ExecutorAI } from '../ai/ExecutorAI.js'
 import { LLMDecider } from '../ai/LLMDecider.js'
 import { SEMI_LOOP_CONFIG } from '../config/execution.js'
+import { RuleDecider } from '../core/RuleDecider.js'
 import { runSemiLoopExecution } from '../core/SemiLoopExecutor.js'
 import { createRandomSource } from '../core/rng.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
@@ -10,7 +11,9 @@ export const ExecutionEngine = {
     const streamWriters = new Map()
     const decider =
       options.decider ??
-      new LLMDecider(ExecutorAI, {
+      (ExecutorAI._useMock
+        ? RuleDecider
+        : new LLMDecider(ExecutorAI, {
         onCallStart: ({ callType, cardId }) => {
           const writer = ThoughtChainPanel.appendStreaming(`[${callType}] `, null, {
             cardId,
@@ -25,7 +28,7 @@ export const ExecutionEngine = {
           streamWriters.get(streamKey(callType, cardId))?.end()
           streamWriters.delete(streamKey(callType, cardId))
         },
-      })
+      }))
 
     return runSemiLoopExecution(
       battlePlan,
@@ -40,6 +43,7 @@ export const ExecutionEngine = {
         rng: options.rng ?? createRandomSource(),
         maxReplans: options.maxReplans,
         config: options.config ?? SEMI_LOOP_CONFIG,
+        interventionState: options.interventionState,
         delay: (ms) => delay(ms),
         hooks: createUiHooks(),
       },

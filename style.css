@@ -512,6 +512,47 @@ h2 {
   font-size: 12px;
 }
 
+.intervention-panel {
+  min-width: min(520px, 52vw);
+  display: grid;
+  gap: 8px;
+  margin-right: 4px;
+}
+
+.intervention-panel[hidden] {
+  display: none;
+}
+
+.intervention-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.intervention-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.intervention-form input {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  background: #0f1418;
+  color: var(--text);
+  padding: 6px 8px;
+}
+
+.intervention-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.intervention-panel small {
+  color: var(--muted);
+}
+
 .debug-panel {
   min-height: 54px;
   padding: 10px;

@@ -1,6 +1,7 @@
 import { generateHand, injectScamCardNextHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
+import { createInterventionState, requestPlayerIntervention } from '../core/PlayerIntervention.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
@@ -21,6 +22,7 @@ export const RoundEngine = {
   gasAllocations: [],
   battlePlan: null,
   decisionDraft: { gasAllocations: {}, contingencies: {} },
+  interventionState: createInterventionState(),
   roundResult: null,
   _timerId: null,
   _intervalId: null,
@@ -38,6 +40,7 @@ export const RoundEngine = {
     this.gasAllocations = []
     this.battlePlan = null
     this.decisionDraft = { gasAllocations: {}, contingencies: {} }
+    this.interventionState = createInterventionState()
     this.roundResult = null
     this.transition('scan')
   },
@@ -129,9 +132,12 @@ export const RoundEngine = {
     UIRenderer.setSelectionStatus(null)
     UIRenderer.setTimerText('Executing')
     UIRenderer.setExecutionMode('semi-loop')
+    this.renderInterventionState('Intervention available once this round.')
 
     try {
-      this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState)
+      this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
+        interventionState: this.interventionState,
+      })
     } catch (error) {
       ThoughtChainPanel.appendLog({
         timestampMs: Date.now(),
@@ -141,6 +147,7 @@ export const RoundEngine = {
       })
       this.roundResult = buildEmergencyResult(selectedCards, error)
     }
+    UIRenderer.setInterventionState(null)
     this.transition('settle')
   },
 
@@ -224,6 +231,33 @@ export const RoundEngine = {
     const selection = this.getSelectionState()
     UIRenderer.setSelectionStatus(selection)
     UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
+  },
+
+  handleInterventionRequest(input = {}) {
+    if (this.gameState?.phase !== 'execute') {
+      const result = { accepted: false, message: 'Intervention is only available during execution.' }
+      this.renderInterventionState(result.message)
+      return result
+    }
+
+    const result = requestPlayerIntervention(this.interventionState, input)
+    this.renderInterventionState(result.message)
+    ThoughtChainPanel.appendLog({
+      timestampMs: Date.now(),
+      source: 'system',
+      text: result.accepted ? `[Intervention queued] ${result.instruction.text}` : `[Intervention rejected] ${result.message}`,
+      isStreaming: false,
+    })
+    return result
+  },
+
+  renderInterventionState(message = '') {
+    UIRenderer.setInterventionState({
+      phase: this.gameState?.phase,
+      used: this.interventionState.interventionUsed,
+      pending: Boolean(this.interventionState.pendingInstruction),
+      message,
+    })
   },
 
   renderPlayableHand(message = '') {
