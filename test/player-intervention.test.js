@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { createBattlePlan } from '../src/core/BattlePlan.js'
-import { INCIDENT_TYPES } from '../src/core/IDecider.js'
+import { DECIDER_ACTIONS, INCIDENT_TYPES } from '../src/core/IDecider.js'
 import {
   createInterventionState,
   requestPlayerIntervention,
@@ -66,7 +66,7 @@ test('pending intervention enters the semi-loop through PLAYER_INTERVENTION inci
     type: 'shortcut',
     shortcutId: 'abandon_highest_risk',
   })
-  const decider = createSpyDecider()
+  const decider = createOnlineInterventionDecider()
 
   assert.equal(request.accepted, true)
 
@@ -82,10 +82,78 @@ test('pending intervention enters the semi-loop through PLAYER_INTERVENTION inci
     },
   )
 
-  assert.equal(decider.incidentSnapshots.length, 1)
-  assert.equal(decider.incidentSnapshots[0].event, INCIDENT_TYPES.PLAYER_INTERVENTION)
-  assert.equal(decider.incidentSnapshots[0].playerInstruction, 'shortcut:abandon_highest_risk')
+  assert.equal(decider.incidentSnapshots.length, 0)
+  assert.equal(result.incidents.length, 1)
+  assert.equal(result.incidents[0].event, INCIDENT_TYPES.PLAYER_INTERVENTION)
+  assert.equal(result.incidents[0].playerInstruction, 'shortcut:abandon_highest_risk')
   assert.equal(result.telemetry.interventionUsed, true)
+})
+
+test('shortcut intervention uses RuleDecider in online mode and can abandon the highest-risk card', async () => {
+  const cards = [
+    card('safe', { expectedProfit: 3, displayedRisk: 0.1, gasCost: 30 }),
+    card('risky', { expectedProfit: 1, displayedRisk: 0.9, gasCost: 30 }),
+  ]
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { safe: 30, risky: 30 },
+    contingencies: { safe: 'fight', risky: 'fight' },
+  })
+  const interventionState = createInterventionState()
+  requestPlayerIntervention(interventionState, {
+    type: 'shortcut',
+    shortcutId: 'abandon_highest_risk',
+  })
+  const onlineDecider = createOnlineInterventionDecider()
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 1, scene: 'dex_arb' },
+    {
+      decider: onlineDecider,
+      fallbackDecider: RuleDecider,
+      interventionState,
+      simulatorFactory: createScriptedSimulatorFactory(),
+      maxReplans: 2,
+    },
+  )
+
+  const decision = result.telemetry.incidentDecisions.find((item) => item.event === INCIDENT_TYPES.PLAYER_INTERVENTION)
+  assert.equal(onlineDecider.incidentSnapshots.length, 0)
+  assert.equal(decision.decision.action, DECIDER_ACTIONS.ABANDON_CARD)
+  assert.equal(decision.decision.targetCardId, 'risky')
+})
+
+test('natural-language intervention still uses the online decider', async () => {
+  const cards = [card('first'), card('second')]
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { first: 30, second: 30 },
+    contingencies: { first: 'fight', second: 'fight' },
+  })
+  const interventionState = createInterventionState()
+  requestPlayerIntervention(interventionState, {
+    type: 'natural',
+    text: 'Move gas to the card with better odds',
+  })
+  const onlineDecider = createOnlineInterventionDecider()
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 1, scene: 'dex_arb' },
+    {
+      decider: onlineDecider,
+      fallbackDecider: RuleDecider,
+      interventionState,
+      simulatorFactory: createScriptedSimulatorFactory(),
+      maxReplans: 2,
+    },
+  )
+
+  const decision = result.telemetry.incidentDecisions.find((item) => item.event === INCIDENT_TYPES.PLAYER_INTERVENTION)
+  assert.equal(onlineDecider.incidentSnapshots.length, 1)
+  assert.equal(onlineDecider.incidentSnapshots[0].playerInstruction, 'Move gas to the card with better odds')
+  assert.equal(decision.decision.action, DECIDER_ACTIONS.REALLOCATE_GAS)
 })
 
 test('RuleDecider fallback keeps shortcuts useful and rejects natural-language intervention', async () => {
@@ -103,21 +171,29 @@ test('RuleDecider fallback keeps shortcuts useful and rejects natural-language i
   assert.match(naturalDecision.reasoning, /快捷指令/)
 })
 
-function createSpyDecider(base = RuleDecider) {
+function createOnlineInterventionDecider() {
   return {
     incidentSnapshots: [],
 
     async planInitial(input) {
-      return base.planInitial(input)
+      return {
+        reasoning: 'Online mock keeps the selected order.',
+        executionOrder: (input.cards ?? []).map((item) => item.id),
+      }
     },
 
     async decideOnIncident(snapshot) {
       this.incidentSnapshots.push(snapshot)
-      return base.decideOnIncident(snapshot)
+      return {
+        action: DECIDER_ACTIONS.REALLOCATE_GAS,
+        targetCardId: snapshot.affectedCardId,
+        gasAllocations: [{ cardId: snapshot.affectedCardId, gas: snapshot.remainingGasPool }],
+        reasoning: 'Online mock would reallocate gas if it handled this intervention.',
+      }
     },
 
     async summarize(input) {
-      return base.summarize(input)
+      return RuleDecider.summarize(input)
     },
   }
 }
