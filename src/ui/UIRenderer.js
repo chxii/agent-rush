@@ -171,7 +171,7 @@ export const UIRenderer = {
         const contingencyValue = constraints?.contingencies?.[card.id] ?? 'fight'
         return `
           <${tagName} class="card ${isSelected ? 'selected' : ''} ${disabledReason ? 'blocked' : ''} ${card.id === enteringId ? 'entering' : ''} ${card.rarity}" data-card-id="${card.id}" ${tagName === 'button' ? `type="button" ${isDisabled ? 'disabled' : ''}` : 'role="button" tabindex="0"'}>
-            <span class="card-top">
+            <span class="card-meta">
               <span>${typeLabel(card.type)}</span>
               <span class="rarity">${card.rarity}</span>
             </span>
