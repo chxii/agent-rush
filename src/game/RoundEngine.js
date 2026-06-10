@@ -31,6 +31,7 @@ export const RoundEngine = {
   _timerRemainingMs: 0,
   _timerDone: null,
   _paused: false,
+  _interventionOpen: false,
 
   startRound(gameState, roundConfig = {}) {
     this.gameState = gameState
@@ -42,6 +43,7 @@ export const RoundEngine = {
     this.decisionDraft = { gasAllocations: {}, contingencies: {} }
     this.interventionState = createInterventionState()
     this.roundResult = null
+    this._interventionOpen = false
     this.transition('scan')
   },
 
@@ -50,6 +52,7 @@ export const RoundEngine = {
     this._paused = false
     this._timerRemainingMs = 0
     this._timerDone = null
+    this._interventionOpen = newPhase === 'execute' ? this._interventionOpen : false
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
     if (newPhase !== 'play') UIRenderer.setSelectionStatus(null)
@@ -132,11 +135,16 @@ export const RoundEngine = {
     UIRenderer.setSelectionStatus(null)
     UIRenderer.setTimerText('Executing')
     UIRenderer.setExecutionMode('semi-loop')
+    this._interventionOpen = true
     this.renderInterventionState('Intervention available once this round.')
 
     try {
       this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
         interventionState: this.interventionState,
+        onExecutionComplete: () => {
+          this._interventionOpen = false
+          UIRenderer.setInterventionState(null)
+        },
       })
     } catch (error) {
       ThoughtChainPanel.appendLog({
@@ -147,6 +155,7 @@ export const RoundEngine = {
       })
       this.roundResult = buildEmergencyResult(selectedCards, error)
     }
+    this._interventionOpen = false
     UIRenderer.setInterventionState(null)
     this.transition('settle')
   },
@@ -234,7 +243,7 @@ export const RoundEngine = {
   },
 
   handleInterventionRequest(input = {}) {
-    if (this.gameState?.phase !== 'execute') {
+    if (this.gameState?.phase !== 'execute' || !this._interventionOpen) {
       const result = { accepted: false, message: 'Intervention is only available during execution.' }
       this.renderInterventionState(result.message)
       return result
@@ -252,6 +261,11 @@ export const RoundEngine = {
   },
 
   renderInterventionState(message = '') {
+    if (!this._interventionOpen) {
+      UIRenderer.setInterventionState(null)
+      return
+    }
+
     UIRenderer.setInterventionState({
       phase: this.gameState?.phase,
       used: this.interventionState.interventionUsed,

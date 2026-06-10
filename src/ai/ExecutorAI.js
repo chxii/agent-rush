@@ -1,11 +1,10 @@
 import { ExecutorMock, getFallbackPlan } from './ExecutorMock.js'
 import { SchemaValidator } from './SchemaValidator.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
+import { LLM_CONFIG } from '../config/llm.js'
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const DEFAULT_MODEL = 'glm-4-flash'
-const TIMEOUT_MS = 5000
-const STREAM_READ_TIMEOUT_MS = 10000
 const CACHE_LIMIT = 50
 const STREAM_DELAY_MIN_MS = 20
 const STREAM_DELAY_MAX_MS = 30
@@ -92,9 +91,11 @@ export const ExecutorAI = {
     }
 
     let emittedFieldDelta = false
+    let emittedFieldText = ''
     const emitFieldDelta = (chunk) => {
       if (!chunk) return
       emittedFieldDelta = true
+      emittedFieldText += chunk
       onChunk(chunk)
     }
 
@@ -103,6 +104,7 @@ export const ExecutorAI = {
       streamField,
       onFieldDelta: emitFieldDelta,
       hasEmittedFieldDelta: () => emittedFieldDelta,
+      getEmittedFieldText: () => emittedFieldText,
     })
   },
 
@@ -131,17 +133,32 @@ export const ExecutorAI = {
         return replayFallbackIfNeeded(callType, input, options)
       }
 
+      if (result.repaired) {
+        appendSystemLog(`[LLM] ${callType} AI 响应被截断，已修复可用 JSON 并继续。`)
+      }
+
       appendSystemLog(`[LLM] ${callType} 成功，用时 ${elapsedMs}ms，返回摘要：${summarizeText(result.rawContent)}`)
       setCachedResponse(callType, input, response)
       return response
     } catch (error) {
       const elapsedMs = Math.round(performance.now() - startedAt)
       console.warn(`[ExecutorAI] ${callType} request failed`, error)
-      appendSystemLog(`[LLM] ${callType} 调用失败，用时 ${elapsedMs}ms：${error.message}`)
+      if (error.isTruncatedResponse) {
+        appendSystemLog(`[LLM] ${callType} AI 响应被截断，用时 ${elapsedMs}ms：${error.message}`)
+      } else {
+        appendSystemLog(`[LLM] ${callType} 调用失败，用时 ${elapsedMs}ms：${error.message}`)
+      }
       if (error.rawContent) {
         appendSystemLog(`[LLM] ${callType} 失败前已收到：${summarizeText(error.rawContent)}`)
       }
-      appendSystemLog('[自动降级] AI 响应超时，使用保底策略')
+      const fallbackMessage = error.name === 'AbortError'
+        ? '[自动降级] AI 响应超时，使用保底策略'
+        : '[自动降级] AI 响应不可用，使用保底策略'
+      appendSystemLog(
+        error.isTruncatedResponse
+          ? '[自动降级] AI 响应被截断，已保留已生成内容并启用保底策略'
+          : fallbackMessage,
+      )
       return replayFallbackIfNeeded(callType, input, options)
     }
   },
@@ -265,9 +282,11 @@ export function createFieldValueExtractor(fieldName) {
 async function requestJson(callType, input) {
   const apiResponse = await fetchWithTimeout(false, callType, input)
   const content = apiResponse.choices?.[0]?.message?.content
+  const parsed = parseJsonContent(content)
   return {
-    data: parseJsonContent(content),
+    data: parsed.data,
     rawContent: content ?? '',
+    repaired: parsed.repaired,
   }
 }
 
@@ -300,7 +319,17 @@ async function requestStreamingJson(callType, input, onFieldDelta = () => {}, st
       })
     }
   } catch (error) {
+    const parsed = tryParseLenientJson(content)
+    if (parsed.ok) {
+      return {
+        data: parsed.value,
+        rawContent: content,
+        repaired: true,
+      }
+    }
+
     error.rawContent = content
+    error.isTruncatedResponse = true
     throw error
   }
 
@@ -315,9 +344,11 @@ async function requestStreamingJson(callType, input, onFieldDelta = () => {}, st
       if (delta) onFieldDelta(delta)
     })
 
+  const parsed = parseJsonContent(content)
   return {
-    data: parseJsonContent(content),
+    data: parsed.data,
     rawContent: content,
+    repaired: parsed.repaired,
   }
 }
 
@@ -327,7 +358,7 @@ async function readStreamChunk(reader) {
     return await Promise.race([
       reader.read(),
       new Promise((_, reject) => {
-        timeoutId = window.setTimeout(() => reject(new Error('SSE 流读取超时')), STREAM_READ_TIMEOUT_MS)
+        timeoutId = window.setTimeout(() => reject(new Error('SSE 流读取超时')), LLM_CONFIG.streamReadTimeoutMs)
       }),
     ])
   } catch (error) {
@@ -344,7 +375,7 @@ async function readStreamChunk(reader) {
 
 async function fetchWithTimeout(stream, callType, input) {
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timeoutId = window.setTimeout(() => controller.abort(), LLM_CONFIG.requestTimeoutMs)
 
   try {
     const response = await fetch(`${getBaseUrl()}/chat/completions`, {
@@ -379,6 +410,12 @@ function replayFallbackIfNeeded(callType, input, options) {
   const fallback = getFallbackPlan(callType, input)
   const shouldReplay =
     options.stream && options.onFieldDelta && !(options.hasEmittedFieldDelta && options.hasEmittedFieldDelta())
+  const emittedFieldText =
+    options.stream && options.getEmittedFieldText ? String(options.getEmittedFieldText() ?? '') : ''
+
+  if (emittedFieldText && options.streamField) {
+    fallback[options.streamField] = emittedFieldText
+  }
 
   if (shouldReplay) {
     return streamText(fallback[options.streamField] ?? fallback.reasoning ?? '', options.onFieldDelta).then(
@@ -405,16 +442,173 @@ function parseSseLine(line) {
   }
 }
 
-function parseJsonContent(content) {
-  if (!content) throw new Error('empty AI content')
+export function tryParseLenientJson(content) {
+  const normalized = normalizeJsonContent(content)
+  if (!normalized) {
+    return { ok: false, value: null, repaired: false, error: new Error('empty AI content') }
+  }
 
-  const normalized = content
+  const parsed = parseJsonCandidate(normalized)
+  if (parsed.ok) return { ...parsed, repaired: false }
+
+  for (const candidate of buildRepairCandidates(normalized)) {
+    const repaired = parseJsonCandidate(candidate)
+    if (repaired.ok) return { ...repaired, repaired: true, repairedContent: candidate }
+  }
+
+  return {
+    ok: false,
+    value: null,
+    repaired: false,
+    error: parsed.error,
+    rawContent: normalized,
+    truncated: looksLikeJsonFragment(normalized),
+  }
+}
+
+function parseJsonContent(content) {
+  const result = tryParseLenientJson(content)
+  if (result.ok) {
+    return {
+      data: result.value,
+      repaired: result.repaired,
+    }
+  }
+
+  const error = new Error(result.truncated ? 'AI response was truncated or invalid JSON' : result.error.message)
+  error.rawContent = result.rawContent ?? content ?? ''
+  error.isTruncatedResponse = result.truncated === true
+  throw error
+}
+
+function normalizeJsonContent(content) {
+  return String(content ?? '')
     .trim()
     .replace(/^```(?:json)?/i, '')
     .replace(/```$/i, '')
     .trim()
+}
 
-  return JSON.parse(normalized)
+function parseJsonCandidate(candidate) {
+  try {
+    const value = JSON.parse(candidate)
+    if (!isObjectLike(value)) {
+      return { ok: false, value: null, error: new Error('AI JSON root must be an object or array') }
+    }
+    return { ok: true, value }
+  } catch (error) {
+    return { ok: false, value: null, error }
+  }
+}
+
+function isObjectLike(value) {
+  return value !== null && typeof value === 'object'
+}
+
+function buildRepairCandidates(content) {
+  const candidates = []
+  addCandidate(candidates, repairJsonFragment(content))
+
+  const trimPoints = findTrimPoints(content)
+  for (const index of trimPoints) {
+    addCandidate(candidates, repairJsonFragment(content.slice(0, index)))
+  }
+
+  return candidates
+}
+
+function repairJsonFragment(content) {
+  const scan = scanJsonFragment(content)
+  let candidate = content
+
+  if (scan.inString) {
+    if (scan.escaped && candidate.endsWith('\\')) candidate = candidate.slice(0, -1)
+    candidate += '"'
+  }
+
+  candidate = removeTrailingCommas(candidate)
+  for (let index = scan.stack.length - 1; index >= 0; index -= 1) {
+    candidate += scan.stack[index]
+  }
+
+  return removeTrailingCommas(candidate)
+}
+
+function scanJsonFragment(content) {
+  const stack = []
+  let inString = false
+  let escaped = false
+
+  for (const char of content) {
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+      if (char === '"') inString = false
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{') stack.push('}')
+    if (char === '[') stack.push(']')
+    if ((char === '}' || char === ']') && stack[stack.length - 1] === char) stack.pop()
+  }
+
+  return { stack, inString, escaped }
+}
+
+function findTrimPoints(content) {
+  const points = []
+  let inString = false
+  let escaped = false
+
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    const char = content[index]
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+      if (char === '"') inString = false
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === ',') points.push(index)
+    if (points.length >= 8) break
+  }
+
+  return points
+}
+
+function removeTrailingCommas(content) {
+  return content.replace(/,\s*([}\]])/g, '$1').replace(/,\s*$/g, '')
+}
+
+function addCandidate(candidates, candidate) {
+  if (!candidate || candidates.includes(candidate)) return
+  candidates.push(candidate)
+}
+
+function looksLikeJsonFragment(content) {
+  const trimmed = content.trim()
+  return trimmed.startsWith('{') || trimmed.startsWith('[')
 }
 
 function buildUserPrompt(callType, input) {
