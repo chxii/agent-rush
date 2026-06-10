@@ -33,8 +33,6 @@ export const GameState = {
 
     const progress = this.loadProgress()
     if (progress) {
-      this.role = progress.role
-      this.roleLevel = progress.roleLevel
       this.tutorialSeen = progress.tutorialSeen
       this.seenBots = progress.seenBots
     }
@@ -53,8 +51,6 @@ export const GameState = {
       STORAGE_KEY,
       JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
-        role: this.role,
-        roleLevel: this.roleLevel,
         tutorialSeen: this.tutorialSeen,
         seenBots: this.seenBots,
       }),
@@ -71,8 +67,6 @@ export const GameState = {
       if (parsed[LEGACY_UNLOCKED_KEY] || parsed[LEGACY_LEVELS_KEY] || parsed[LEGACY_ACTIVE_KEY]) return null
 
       return {
-        role: isValidRole(parsed.role) ? parsed.role : null,
-        roleLevel: Math.max(1, Math.round(Number(parsed.roleLevel) || 1)),
         tutorialSeen: parsed.tutorialSeen === true,
         seenBots: Array.isArray(parsed.seenBots) ? parsed.seenBots : [],
       }
