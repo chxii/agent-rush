@@ -1,5 +1,6 @@
 import { BOTS } from '../config/bots.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
+import { createRandomSource } from './rng.js'
 
 let forceStealNextCompetition = false
 
@@ -12,7 +13,8 @@ export const EnemyBotAI = {
     return entry?.[0] ?? null
   },
 
-  compete(card, gameState) {
+  compete(card, gameState, options = {}) {
+    const rng = options.rng ?? createRandomSource(options.seed)
     const botName = this.getActiveBot(gameState.currentLayer)
     if (!botName) return { stolen: false, botName: null }
 
@@ -29,7 +31,7 @@ export const EnemyBotAI = {
     }
 
     return {
-      stolen: Math.random() < winProb,
+      stolen: rng() < winProb,
       botName,
       winProb,
     }
