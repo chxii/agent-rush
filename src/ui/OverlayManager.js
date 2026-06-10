@@ -109,6 +109,7 @@ export const OverlayManager = {
         return `
           <button class="choice-card" data-scene-id="${sceneId}" type="button">
             <strong>${scene.name}</strong>
+            <span>${scene.styleHint}</span>
             <span>骗局率 ${(scene.scamRate * 100).toFixed(0)}%</span>
             <span>Bot 偏好 ${scene.botPreference ?? '无'}</span>
           </button>

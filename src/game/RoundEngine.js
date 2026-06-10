@@ -164,7 +164,10 @@ export const RoundEngine = {
 
   startSettle(roundResult) {
     const safeResult = roundResult ?? { cards: [], netProfit: 0, gasUsed: 0 }
-    this.gameState.gasPool = Math.max(0, this.gameState.gasPool - safeResult.gasUsed)
+    const finalGasPool = Number(safeResult.finalState?.gasPool)
+    this.gameState.gasPool = Number.isFinite(finalGasPool)
+      ? Math.max(0, Math.round(finalGasPool))
+      : Math.max(0, this.gameState.gasPool - safeResult.gasUsed)
     UIRenderer.renderHeader(this.gameState)
     UIRenderer.setTimerText('已结算')
     SettlementPanel.show(safeResult, this.gameState, () => {

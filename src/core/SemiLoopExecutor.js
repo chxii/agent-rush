@@ -50,7 +50,7 @@ export async function runSemiLoopExecution(battlePlan, context = {}, options = {
     if (!card || TERMINAL_STATUSES.has(card.status)) continue
 
     await emit(options, 'onCardStart', { card })
-    recordEvent(card, 'plan', 'Executor plan', initialPlan.reasoning)
+    recordEvent(card, 'plan', 'Executor 计划', initialPlan.reasoning)
     await executeCard(card, {
       simulator,
       battlePlan,
@@ -83,7 +83,7 @@ export async function runSemiLoopExecution(battlePlan, context = {}, options = {
       syncWorkingCard(card, simulator)
       if (abandoned.invalid) {
         card.status = 'abandoned'
-        card.resultReason = 'Card left unresolved after semi-loop execution.'
+        card.resultReason = '半闭环执行结束后仍未解决，已安全放弃。'
       }
     }
 
@@ -191,7 +191,7 @@ async function handleIncident(card, type, triggerResult, state) {
 
   const decision = await decideOnIncidentSafely(snapshot, state)
   state.telemetry.incidentDecisions.push({ event: type, cardId: card.id, decision })
-  recordEvent(card, decision.fallback ? 'fallback' : 'repair', 'Executor replan', decision.reasoning)
+  recordEvent(card, decision.fallback ? 'fallback' : 'repair', 'Executor 重规划', decision.reasoning)
   await emit(state.options, 'onDecision', { card, snapshot, decision })
 
   await applyIncidentDecision(card, decision, state)
@@ -207,7 +207,7 @@ async function maybeHandlePlayerIntervention(card, state) {
     INCIDENT_TYPES.PLAYER_INTERVENTION,
     {
       tool: 'player_intervention',
-      message: 'Player intervention queued after the last executor action.',
+      message: '玩家干预已在上一次 Executor 动作后排队。',
       playerInstruction: instruction.text,
       instruction,
     },
@@ -476,11 +476,11 @@ function recordEvent(card, kind, title, detail, meta = '') {
 
 function incidentTitle(type) {
   const titles = {
-    [INCIDENT_TYPES.TARGET_STOLEN]: 'Target stolen',
-    [INCIDENT_TYPES.TX_FAILED]: 'Transaction failed',
-    [INCIDENT_TYPES.GAS_INSUFFICIENT]: 'Gas insufficient',
-    [INCIDENT_TYPES.PLAYER_INTERVENTION]: 'Player intervention',
-    [INCIDENT_TYPES.TARGET_INVALID]: 'Target invalid',
+    [INCIDENT_TYPES.TARGET_STOLEN]: '目标被抢',
+    [INCIDENT_TYPES.TX_FAILED]: '交易失败',
+    [INCIDENT_TYPES.GAS_INSUFFICIENT]: 'Gas 不足',
+    [INCIDENT_TYPES.PLAYER_INTERVENTION]: '玩家干预',
+    [INCIDENT_TYPES.TARGET_INVALID]: '目标失效',
   }
   return titles[type] ?? type
 }
