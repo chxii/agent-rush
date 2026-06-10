@@ -14,6 +14,7 @@ const elements = {
 
 let cardClickCallback = null
 let playClickCallback = null
+let decisionChangeCallback = null
 
 export const UIRenderer = {
   init() {
@@ -35,14 +36,36 @@ export const UIRenderer = {
     }
 
     elements.handArea?.addEventListener('click', (event) => {
+      if (event.target.closest('[data-decision-control]')) return
       const cardButton = event.target.closest('[data-card-id]')
       if (cardButton && cardClickCallback) {
         cardClickCallback(cardButton.dataset.cardId)
       }
     })
 
+    elements.handArea?.addEventListener('keydown', (event) => {
+      if (event.target.closest('[data-decision-control]')) return
+      if (event.key !== 'Enter' && event.key !== ' ') return
+
+      const cardButton = event.target.closest('[data-card-id]')
+      if (cardButton && cardClickCallback) {
+        event.preventDefault()
+        cardClickCallback(cardButton.dataset.cardId)
+      }
+    })
+
+    elements.handArea?.addEventListener('input', (event) => {
+      if (!event.target.closest('[data-decision-control]')) return
+      if (decisionChangeCallback) decisionChangeCallback(collectDecisionInput())
+    })
+
+    elements.handArea?.addEventListener('change', (event) => {
+      if (!event.target.closest('[data-decision-control]')) return
+      if (decisionChangeCallback) decisionChangeCallback(collectDecisionInput())
+    })
+
     elements.playButton?.addEventListener('click', () => {
-      if (playClickCallback) playClickCallback()
+      if (playClickCallback) playClickCallback({ battlePlanInput: collectDecisionInput() })
     })
 
     elements.skipButton?.addEventListener('click', () => {
@@ -100,9 +123,13 @@ export const UIRenderer = {
       .map((card) => {
         const riskPercent = Math.round(card.displayedRisk * 100)
         const disabledReason = constraints?.disabledReasons?.[card.id] ?? ''
+        const isSelected = selectedSet.has(card.id)
         const isDisabled = !isPlayable || Boolean(disabledReason)
+        const tagName = isSelected && isPlayable ? 'article' : 'button'
+        const gasValue = constraints?.gasAllocations?.[card.id] ?? card.gasCost
+        const contingencyValue = constraints?.contingencies?.[card.id] ?? 'fight'
         return `
-          <button class="card ${selectedSet.has(card.id) ? 'selected' : ''} ${disabledReason ? 'blocked' : ''} ${card.id === enteringId ? 'entering' : ''} ${card.rarity}" data-card-id="${card.id}" type="button" ${isDisabled ? 'disabled' : ''}>
+          <${tagName} class="card ${isSelected ? 'selected' : ''} ${disabledReason ? 'blocked' : ''} ${card.id === enteringId ? 'entering' : ''} ${card.rarity}" data-card-id="${card.id}" ${tagName === 'button' ? `type="button" ${isDisabled ? 'disabled' : ''}` : 'role="button" tabindex="0"'}>
             <span class="card-top">
               <span>${typeLabel(card.type)}</span>
               <span class="rarity">${card.rarity}</span>
@@ -112,8 +139,9 @@ export const UIRenderer = {
             <span class="metric risk-${riskBucket(card.displayedRisk)}">Risk ${riskPercent}%</span>
             <span class="metric">Window ${card.timeWindowSec}s</span>
             <span class="reason">${card.isScam ? '! ' : ''}${card.riskReason}</span>
+            ${isSelected && isPlayable ? renderDecisionControls(card, gasValue, contingencyValue) : ''}
             ${disabledReason ? `<span class="blocked-reason">${disabledReason}</span>` : ''}
-          </button>
+          </${tagName}>
         `
       })
       .join('')
@@ -144,6 +172,7 @@ export const UIRenderer = {
     elements.selectionStatus.innerHTML = `
       <p class="label">选牌限制</p>
       <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gwei</strong>
+      <small>Remaining ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gwei</small>
       ${status.message ? `<span>${status.message}</span>` : ''}
     `
   },
@@ -173,6 +202,48 @@ export const UIRenderer = {
   onPlayClick(callback) {
     playClickCallback = callback
   },
+
+  onDecisionChange(callback) {
+    decisionChangeCallback = callback
+  },
+}
+
+function collectDecisionInput() {
+  const gasAllocations = {}
+  const contingencies = {}
+
+  elements.handArea?.querySelectorAll('[data-gas-card-id]').forEach((input) => {
+    gasAllocations[input.dataset.gasCardId] = Number(input.value)
+  })
+
+  elements.handArea?.querySelectorAll('[data-contingency-card-id]').forEach((input) => {
+    contingencies[input.dataset.contingencyCardId] = input.value
+  })
+
+  return { gasAllocations, contingencies }
+}
+
+function renderDecisionControls(card, gasValue, contingencyValue) {
+  return `
+    <span class="decision-controls" data-decision-control>
+      <label>
+        <span>Gas</span>
+        <input data-gas-card-id="${card.id}" type="number" min="0" step="1" value="${gasValue}">
+      </label>
+      <label>
+        <span>Plan</span>
+        <select data-contingency-card-id="${card.id}">
+          ${contingencyOption('fight', 'Fight', contingencyValue)}
+          ${contingencyOption('abandon', 'Abandon', contingencyValue)}
+          ${contingencyOption('transfer', 'Transfer', contingencyValue)}
+        </select>
+      </label>
+    </span>
+  `
+}
+
+function contingencyOption(value, label, selectedValue) {
+  return `<option value="${value}" ${value === selectedValue ? 'selected' : ''}>${label}</option>`
 }
 
 function agentLabel(agentId) {

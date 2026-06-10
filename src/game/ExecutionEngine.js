@@ -1,4 +1,5 @@
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
+import { battlePlanToGasAllocationArray } from '../core/BattlePlan.js'
 import { createToolSimulator } from '../core/ToolSimulator.js'
 import { createRandomSource } from '../core/rng.js'
 import { getFallbackPlan } from '../ai/ExecutorMock.js'
@@ -65,7 +66,7 @@ export const ExecutionEngine = {
     return buildRoundResult(executedCards)
   },
 
-  async runAdaptiveMode(cards, gameState, executorAI) {
+  async runAdaptiveMode(cards, gameState, executorAI, battlePlan = null) {
     const executionLog = []
     const completedCards = []
     const initialGasPool = gameState.gasPool
@@ -81,10 +82,11 @@ export const ExecutionEngine = {
       remainingTimeWindowSec: Math.max(...cards.map((card) => card.timeWindowSec)),
     })
 
-    const allocationMap = new Map(initialPlan.gasAllocations.map((item) => [item.cardId, item.gas]))
+    const playerGasAllocations = battlePlan ? battlePlanToGasAllocationArray(battlePlan) : initialPlan.gasAllocations
+    const allocationMap = new Map(playerGasAllocations.map((item) => [item.cardId, item.gas]))
     const simulator = createToolSimulator({
       cards,
-      allocations: initialPlan.gasAllocations,
+      allocations: playerGasAllocations,
       gasPool: initialGasPool,
       layer: gameState.currentLayer,
       scene: gameState.currentScene,
