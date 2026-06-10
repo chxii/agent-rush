@@ -89,7 +89,7 @@ h2 {
 
 .header-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
 }
 
@@ -103,6 +103,13 @@ h2 {
 
 .header-grid strong {
   font-size: 18px;
+}
+
+.header-grid small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .main-grid {
@@ -657,6 +664,27 @@ h2 {
   padding: 12px;
 }
 
+.final-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.final-stats > div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.final-stats strong {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
 .start-progress strong {
   font-size: 13px;
   color: var(--muted);
@@ -876,7 +904,8 @@ h2 {
 
   .header-grid,
   .hand-area,
-  .start-progress {
+  .start-progress,
+  .final-stats {
     grid-template-columns: 1fr;
   }
 

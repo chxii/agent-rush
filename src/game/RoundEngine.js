@@ -3,6 +3,7 @@ import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
 import { createInterventionState, requestPlayerIntervention } from '../core/PlayerIntervention.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
+import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
 import { OverlayManager } from '../ui/OverlayManager.js'
@@ -372,7 +373,7 @@ export const RoundEngine = {
   jumpToLayer(layer) {
     if (!this.gameState) return
 
-    const targetLayer = Math.max(1, Math.min(20, Number(layer) || 1))
+    const targetLayer = Math.max(1, Math.min(WIN_LOSS_CONFIG.victory.targetLayer, Number(layer) || 1))
     const layerConfig = LAYER_CONFIG[targetLayer] ?? LAYER_CONFIG[20]
     this.clearTimers()
 

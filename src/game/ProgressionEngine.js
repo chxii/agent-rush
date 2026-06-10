@@ -1,5 +1,6 @@
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
+import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 import { OverlayManager } from '../ui/OverlayManager.js'
 
 let roundStarter = null
@@ -20,12 +21,12 @@ export const ProgressionEngine = {
     EnemyBotAI.updateGenesisHistory(gameState, roundResult.cards)
 
     if (gameState.checkFailure()) {
-      OverlayManager.showGameOver(() => restartGame(gameState))
+      OverlayManager.showGameOver(buildFinalStats(gameState), () => restartGame(gameState))
       return
     }
 
     if (gameState.checkVictory()) {
-      OverlayManager.showVictory({ cumulativeProfit: gameState.cumulativeProfit }, () => restartGame(gameState))
+      OverlayManager.showVictory(buildFinalStats(gameState), () => restartGame(gameState))
       return
     }
 
@@ -56,7 +57,7 @@ export const ProgressionEngine = {
   },
 
   advanceAfterReward(gameState, completedLayer, options = {}) {
-    gameState.currentLayer = Math.min(completedLayer + 1, 20)
+    gameState.currentLayer = Math.min(completedLayer + 1, WIN_LOSS_CONFIG.victory.targetLayer)
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = gameState.gasPoolMax
     this.showSceneSelection(gameState, options)
@@ -106,6 +107,14 @@ export const ProgressionEngine = {
       isBoss: isBossLayer(gameState.currentLayer),
     }
   },
+}
+
+function buildFinalStats(gameState) {
+  return {
+    currentLayer: gameState.currentLayer,
+    cumulativeProfit: gameState.cumulativeProfit,
+    consecutiveLoss: gameState.consecutiveLoss,
+  }
 }
 
 function getLayerConfig(layer) {
