@@ -6,6 +6,7 @@ import { RuleDecider } from '../src/core/RuleDecider.js'
 import { runSemiLoopExecution } from '../src/core/SemiLoopExecutor.js'
 import { createToolSimulator } from '../src/core/ToolSimulator.js'
 import { runBatchSimulation } from '../sim/run-batch.js'
+import { createInterventionState, requestPlayerIntervention } from '../src/core/PlayerIntervention.js'
 
 test('semi-loop replans with a real snapshot when the second card is stolen', async () => {
   const cards = createCards()
@@ -147,6 +148,34 @@ test('semi-loop passes remaining time and competitor bid into broadcast_tx', asy
   assert.equal(broadcastInputs[0].competitorGasBid, 55)
   assert.equal(typeof broadcastInputs[0].elapsedSec, 'number')
   assert.equal(broadcastInputs[0].remainingTimeWindowSec, 9)
+})
+
+test('shortcut player intervention does not spend LLM replan budget', async () => {
+  const interventionState = createInterventionState()
+  requestPlayerIntervention(interventionState, { type: 'shortcut', shortcutId: 'abandon_highest_risk' })
+  const cards = [card('a', { trueRisk: 0.9, displayedRisk: 0.9 })]
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30 },
+    contingencies: { a: 'fight' },
+  })
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 1, scene: 'dex_arb' },
+    {
+      decider: createSpyDecider(),
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['success'] }),
+      interventionState,
+      maxReplans: 1,
+    },
+  )
+
+  assert.equal(result.incidents.length, 1)
+  assert.equal(result.incidents[0].event, 'player_intervention')
+  assert.equal(result.telemetry.replans, 0)
+  assert.equal(result.telemetry.deciderCalls.decideOnIncident, 0)
 })
 
 test('headless 1000 RuleDecider runs do not crash and have bounded semi-loop incidents', async () => {

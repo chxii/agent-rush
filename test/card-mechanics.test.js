@@ -79,11 +79,39 @@ test('nft_snipe has wider successful profit variance than arbitrage', () => {
   assert.ok(stddev(nftProfits) > stddev(arbitrageProfits) * 2)
 })
 
-test('arbitrage has lower steal probability than nft_snipe under the same pressure', () => {
+test('arbitrage is no longer protected by the lowest steal probability', () => {
   const arbitrage = monitor('arbitrage')
-  const nft = monitor('nft_snipe')
+  const liquidation = monitor('liquidation')
 
-  assert.ok(nft.stealProbability > arbitrage.stealProbability * 2)
+  assert.ok(arbitrage.stealProbability > liquidation.stealProbability)
+})
+
+test('arbitrage keeps its stable identity through smaller failed gas loss', () => {
+  const arbitrage = forcedStolenBroadcast('arbitrage')
+  const sandwich = forcedStolenBroadcast('sandwich')
+
+  assert.equal(arbitrage.result.stolen, true)
+  assert.equal(sandwich.result.stolen, true)
+  assert.ok(arbitrage.result.actualGasConsumed < sandwich.result.actualGasConsumed)
+  assert.ok(Math.abs(arbitrage.result.actualProfit) < Math.abs(sandwich.result.actualProfit))
+})
+
+test('invalid fetch_prices result makes later broadcast fail cheaply', () => {
+  const simulator = createToolSimulator({
+    cards: [{ ...cardOfType('arbitrage'), trueRisk: 0.95 }],
+    gasPool: 100,
+    botName: null,
+    rng: createSequenceRng([0, 0.5, 0.5]),
+    allocations: [{ cardId: 'arbitrage_card', gas: 40 }],
+  })
+
+  const fetchResult = simulator.execute('fetch_prices', { cardId: 'arbitrage_card' })
+  const broadcastResult = simulator.execute('broadcast_tx', { cardId: 'arbitrage_card', gas: 40 })
+
+  assert.equal(fetchResult.opportunityStillValid, false)
+  assert.equal(broadcastResult.success, false)
+  assert.equal(broadcastResult.invalidOpportunity, true)
+  assert.ok(broadcastResult.actualGasConsumed < 40)
 })
 
 test('Genesis competitor bid is higher while non-Genesis keeps the default bid curve', () => {
@@ -183,6 +211,20 @@ function replaceWithHugeBid(botName) {
   })
   simulator.execute('monitor_mempool', { cardId: 'front_run_card' })
   return simulator.execute('replace_tx', { cardId: 'front_run_card', newGas: 500 })
+}
+
+function forcedStolenBroadcast(type) {
+  const simulator = createToolSimulator({
+    cards: [cardOfType(type)],
+    gasPool: 120,
+    botName: 'Phantom',
+    rng: createSequenceRng([0, 0]),
+    forceSteal: true,
+    allocations: [{ cardId: `${type}_card`, gas: 40 }],
+  })
+  simulator.execute('monitor_mempool', { cardId: `${type}_card` })
+  const result = simulator.execute('broadcast_tx', { cardId: `${type}_card`, gas: 40 })
+  return { simulator, result }
 }
 
 function collectSuccessfulProfits(type) {

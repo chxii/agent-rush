@@ -1,7 +1,7 @@
 export const WIN_LOSS_CONFIG = {
   victory: {
     targetLayer: 20,
-    cumulativeProfitGreaterThan: 10,
+    cumulativeProfitGreaterThan: 8.75,
   },
   failure: {
     consecutiveLossThreshold: 2,

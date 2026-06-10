@@ -74,6 +74,7 @@ export function createToolState(options = {}, config = TOOL_SIMULATOR_CONFIG) {
       allocatedGas: clampInt(allocationMap.get(card.id) ?? card.allocatedGas ?? card.gasCost ?? 0, 0),
       gasUsed: card.gasUsed ?? 0,
       actualProfit: card.actualProfit ?? 0,
+      opportunityStillValid: card.opportunityStillValid !== false,
       status: card.status && card.status !== 'pending' ? card.status : 'pending',
       resultReason: card.resultReason ?? '',
     })),
@@ -90,6 +91,7 @@ function fetchPrices(state, params, rng, config) {
     (config.prices.invalidationBase + card.trueRisk * config.prices.invalidationRiskWeight) * sensitivity.price,
   )
   const opportunityStillValid = rng() >= invalidationChance
+  card.opportunityStillValid = opportunityStillValid
   const drift = randomBetween(rng, -config.prices.profitVariance, config.prices.profitVariance)
   const priceGapEth = roundEth(Math.max(0, card.expectedProfit * (1 + drift)))
   const slippageEstimate = round(randomBetween(rng, ...config.prices.slippageRange) * sensitivity.price, 4)
@@ -149,9 +151,29 @@ function broadcastTx(state, params, rng, config) {
   card.status = 'in_progress'
   card.allocatedGas = gas
 
+  if (card.opportunityStillValid === false || params.opportunityStillValid === false) {
+    const gasLost = spendFailureGas(state, card, gas, 'invalidOpportunity', config)
+    settleCard(card, 'failed', roundEth(-gasLost * config.gas.gasToEth), 'Opportunity is no longer valid before broadcast.')
+    return {
+      success: false,
+      tool: 'broadcast_tx',
+      cardId: card.id,
+      message: card.resultReason,
+      status: card.status,
+      invalidOpportunity: true,
+      stolen: false,
+      windowExpired: false,
+      actualProfit: card.actualProfit,
+      actualGasConsumed: gasLost,
+      remainingGasPool: state.gasPool,
+      successProbability: 0,
+      stealProbability: 0,
+    }
+  }
+
   if (isHardTimeWindowExpired(card, params, mechanics)) {
-    spendGas(state, card, gas)
-    const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
+    const gasLost = spendFailureGas(state, card, gas, 'windowExpired', config)
+    const loss = roundEth(-gasLost * config.gas.gasToEth)
     settleCard(card, 'failed', loss, '清算窗口在广播前已经过期。')
     return {
       success: false,
@@ -162,7 +184,7 @@ function broadcastTx(state, params, rng, config) {
       stolen: false,
       windowExpired: true,
       actualProfit: card.actualProfit,
-      actualGasConsumed: gas,
+      actualGasConsumed: gasLost,
       remainingGasPool: state.gasPool,
       successProbability: 0,
       stealProbability: 0,
@@ -173,10 +195,9 @@ function broadcastTx(state, params, rng, config) {
   state.competitors[card.id] = competition
   const stolen = competition.competitorDetected && rng() < competition.stealProbability
 
-  spendGas(state, card, gas)
-
   if (stolen) {
-    const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
+    const gasLost = spendFailureGas(state, card, gas, 'stolen', config)
+    const loss = roundEth(-gasLost * config.gas.gasToEth)
     settleCard(card, 'failed', loss, `目标被 ${state.botName} 抢走。`)
     return {
       success: false,
@@ -186,7 +207,7 @@ function broadcastTx(state, params, rng, config) {
       status: card.status,
       stolen: true,
       actualProfit: card.actualProfit,
-      actualGasConsumed: gas,
+      actualGasConsumed: gasLost,
       remainingGasPool: state.gasPool,
       successProbability: 0,
       stealProbability: competition.stealProbability,
@@ -195,13 +216,17 @@ function broadcastTx(state, params, rng, config) {
 
   const successProbability = calculateBroadcastSuccessProbability(state, card, gas, competition, config)
   const txSucceeded = rng() < successProbability
+  let actualGasConsumed = gas
 
   if (txSucceeded) {
+    spendGas(state, card, gas)
     const profitVariance = mechanics.profitVariance ?? config.broadcast.profitVariance
     const multiplier = 1 + randomBetween(rng, -profitVariance, profitVariance)
     settleCard(card, 'success', roundEth(card.expectedProfit * multiplier), '交易已在链上确认。')
   } else {
-    const loss = roundEth(-gas * config.gas.gasToEth * config.gas.failedGasLossRate)
+    const gasLost = spendFailureGas(state, card, gas, 'txFailed', config)
+    actualGasConsumed = gasLost
+    const loss = roundEth(-gasLost * config.gas.gasToEth)
     settleCard(card, 'failed', loss, '交易回滚或错过区块窗口。')
   }
 
@@ -213,7 +238,7 @@ function broadcastTx(state, params, rng, config) {
     status: card.status,
     stolen: false,
     actualProfit: card.actualProfit,
-    actualGasConsumed: gas,
+    actualGasConsumed,
     remainingGasPool: state.gasPool,
     successProbability,
     stealProbability: competition.stealProbability,
@@ -485,6 +510,20 @@ function spendGas(state, card, gas) {
   state.gasPool = clampNumber(state.gasPool - gas, 0, Number.MAX_SAFE_INTEGER)
   state.gasUsed += gas
   card.gasUsed = (card.gasUsed ?? 0) + gas
+}
+
+function spendFailureGas(state, card, gas, reason, config) {
+  const gasLost = Math.min(state.gasPool, Math.ceil(gas * failureGasLossRate(config, card, reason)))
+  state.gasPool = clampNumber(state.gasPool - gasLost, 0, Number.MAX_SAFE_INTEGER)
+  state.gasUsed += gasLost
+  card.gasUsed = (card.gasUsed ?? 0) + gasLost
+  return gasLost
+}
+
+function failureGasLossRate(config, card, reason) {
+  const mechanics = mechanicsFor(card.type)
+  const baseRate = config.gas.failedGasLossRateByReason?.[reason] ?? config.gas.failedGasLossRate
+  return clamp01(baseRate * (mechanics.failedGasLossMultiplier ?? 1))
 }
 
 function settleCard(card, status, actualProfit, reason) {

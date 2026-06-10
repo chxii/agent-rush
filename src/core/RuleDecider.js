@@ -75,7 +75,7 @@ export const RuleDecider = {
       }
     }
 
-    if (playerContingency === 'abandon' || eventType === INCIDENT_TYPES.TX_FAILED) {
+    if (playerContingency === 'abandon') {
       return {
         action: DECIDER_ACTIONS.ABANDON_CARD,
         targetCardId: affectedCardId,

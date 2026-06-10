@@ -30,8 +30,8 @@ export const ROLE_CONFIG = {
       buffSummary: '随档位每轮额外发 1/2/3 张机会牌。',
       levels: {
         1: { scanCardBonus: 1 },
-        2: { scanCardBonus: 2 },
-        3: { scanCardBonus: 3 },
+        2: { scanCardBonus: 1 },
+        3: { scanCardBonus: 1 },
       },
     },
     [ROLE_IDS.RESIST]: {
@@ -41,9 +41,9 @@ export const ROLE_CONFIG = {
       description: '降低被抢概率，并让反抢时的 replace_tx 成本更低。',
       buffSummary: '降低被抢概率，反抢更便宜。',
       levels: {
-        1: { stealProbabilityMultiplier: 0.85, replaceRequiredBidMultiplier: 0.92, replaceSuppressProbabilityBonus: 0.04 },
-        2: { stealProbabilityMultiplier: 0.75, replaceRequiredBidMultiplier: 0.86, replaceSuppressProbabilityBonus: 0.08 },
-        3: { stealProbabilityMultiplier: 0.65, replaceRequiredBidMultiplier: 0.8, replaceSuppressProbabilityBonus: 0.12 },
+        1: { stealProbabilityMultiplier: 0.7, replaceRequiredBidMultiplier: 0.84, replaceSuppressProbabilityBonus: 0.08 },
+        2: { stealProbabilityMultiplier: 0.55, replaceRequiredBidMultiplier: 0.76, replaceSuppressProbabilityBonus: 0.13 },
+        3: { stealProbabilityMultiplier: 0.45, replaceRequiredBidMultiplier: 0.68, replaceSuppressProbabilityBonus: 0.18 },
       },
     },
     [ROLE_IDS.EFFICIENCY]: {
@@ -53,9 +53,9 @@ export const ROLE_CONFIG = {
       description: '提高每层 Gas Pool 上限，适合同时推进更多机会。',
       buffSummary: '随档位提高 15%/25%/35% Gas Pool 上限。',
       levels: {
-        1: { gasPoolMultiplier: 1.15 },
-        2: { gasPoolMultiplier: 1.25 },
-        3: { gasPoolMultiplier: 1.35 },
+        1: { gasPoolMultiplier: 1.2 },
+        2: { gasPoolMultiplier: 1.35 },
+        3: { gasPoolMultiplier: 1.5 },
       },
     },
   },

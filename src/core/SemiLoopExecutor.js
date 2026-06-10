@@ -133,9 +133,6 @@ async function executeCard(card, state) {
         await handleIncident(card, INCIDENT_TYPES.TARGET_STOLEN, result, state)
         continue
       }
-      if (result.windowExpired || result.status === 'failed') {
-        await handleIncident(card, INCIDENT_TYPES.TX_FAILED, result, state)
-      }
       continue
     }
 
@@ -224,7 +221,7 @@ async function decideOnIncidentSafely(snapshot, state) {
   if (useFallbackForLimit) {
     state.telemetry.fallbackReasons.push({ reason: 'replan_limit', event: snapshot.trigger.type, cardId: snapshot.affectedCardId })
     await emit(state.options, 'onFallback', { reason: 'replan_limit', snapshot })
-  } else {
+  } else if (!useRuleForShortcut) {
     state.telemetry.replans += 1
     state.telemetry.deciderCalls.decideOnIncident += 1
   }
@@ -479,7 +476,6 @@ function recordEvent(card, kind, title, detail, meta = '') {
 function incidentTitle(type) {
   const titles = {
     [INCIDENT_TYPES.TARGET_STOLEN]: '目标被抢',
-    [INCIDENT_TYPES.TX_FAILED]: '交易失败',
     [INCIDENT_TYPES.GAS_INSUFFICIENT]: 'Gas 不足',
     [INCIDENT_TYPES.PLAYER_INTERVENTION]: '玩家干预',
     [INCIDENT_TYPES.TARGET_INVALID]: '目标失效',
