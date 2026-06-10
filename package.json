@@ -1,0 +1,12 @@
+{
+  "name": "agent-rush-dev-harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Development-only test harness for Agent Rush. The browser game has no runtime npm dependency.",
+  "scripts": {
+    "test": "node --test",
+    "sim": "node sim/run-batch.js"
+  },
+  "devDependencies": {}
+}

@@ -28,3 +28,6 @@ build/
 
 # Local web research cache
 .firecrawl/
+
+# CodeGraph 本地索引缓存
+.codegraph/
