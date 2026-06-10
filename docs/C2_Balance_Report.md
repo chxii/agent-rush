@@ -67,6 +67,45 @@ Card-type rates from the same run:
   - Added strategy deciders and CLI support.
   - Added JSON metrics and `summaryText`.
 
+## Review Follow-Up
+
+### TX_FAILED Half-Loop Policy
+
+Review feedback noted that terminal `TX_FAILED` no longer entered the half-loop. This is intentional and now explicit:
+
+- `target_stolen`, `gas_insufficient`, and `player_intervention` remain actionable half-loop incidents.
+- Terminal broadcast failures (`tx_failed`, `window_expired`, `invalid_opportunity`) are already settled card outcomes, so the executor does not ask the decider to replan a completed failed transaction.
+- Dead `TX_FAILED` incident code was removed from `INCIDENT_TYPES`, `RuleDecider`, and incident titles.
+- Batch metrics now expose `terminalFailureReasons` separately from `failureReasons`.
+
+This keeps section 4.5 half-loop volume focused on actionable replans while section 3 still sees revert/window/opportunity failure distribution.
+
+### Genesis Layers 18-20
+
+Command:
+
+```powershell
+node sim/run-batch.js --runs 500 --strategies all --roles all --from-layer 18 --to-layer 20 --role-level 3 --seed c2-genesis-verified --summary-only true
+```
+
+This starts directly at layer 18 with role level 3, so full-run `passRate` is not the acceptance signal: the run begins with zero cumulative profit and still checks the layer-20 victory threshold. Genesis pressure is judged by layer reach, profit, stolen/failure rates, and half-loop volume.
+
+Genesis-layer results:
+
+| Metric | Result |
+| --- | ---: |
+| Layer 18 reached | 100.0% |
+| Layer 19 reached | 100.0% |
+| Layer 20 reached | 99.98% |
+| Avg cumulative profit over 18-20 | 1.085 ETH |
+| Avg half-loop triggers/game | 1.069 |
+| Role win-rate spread | 0.5pp |
+| Layer 18 negative-profit rate | 50.47% |
+| Layer 19 negative-profit rate | 50.77% |
+| Layer 20 negative-profit rate | 50.46% |
+
+Genesis conclusion: terminal layers have clear pressure (roughly half of layer attempts are negative and stolen rates are elevated) but are not fatal, because almost every 18-20 slice reaches layer 20 and the three-layer average remains positive.
+
 ## Test Evidence
 
 Command:

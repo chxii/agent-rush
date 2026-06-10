@@ -1,6 +1,5 @@
 export const INCIDENT_TYPES = {
   TARGET_STOLEN: 'target_stolen',
-  TX_FAILED: 'tx_failed',
   GAS_INSUFFICIENT: 'gas_insufficient',
   PLAYER_INTERVENTION: 'player_intervention',
   TARGET_INVALID: 'target_invalid',

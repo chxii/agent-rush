@@ -225,6 +225,7 @@ function buildLayerReport({ seed, strategy, role, roleLevel, layer, scene, gasPo
     deciderCalls: { planInitial: 0, decideOnIncident: 0, summarize: 0 },
   }
   const cardTypeStats = collectCardTypeStats(result.cards, result.executionLog)
+  const terminalFailureReasons = collectTerminalFailureReasons(result.executionLog)
   return {
     status: 'ok',
     seed,
@@ -253,6 +254,7 @@ function buildLayerReport({ seed, strategy, role, roleLevel, layer, scene, gasPo
       fallbackReplans: telemetry.fallbackReplans,
       halfLoopTriggered: result.incidents.length > 0,
       cardTypeStats,
+      terminalFailureReasons,
     },
     incidents: result.incidents,
     telemetry,
@@ -266,6 +268,7 @@ function aggregateGames(games) {
   const byRole = Object.fromEntries(ALL_ROLES.map((name) => [name, emptyAggregate()]))
   const layerCheckpoints = {}
   const failureReasons = {}
+  const terminalFailureReasons = {}
   const cardTypes = Object.fromEntries(CARD_TYPES.map((type) => [type, emptyCardAggregate()]))
   const profitCurve = Array.from({ length: 20 }, (_, index) => ({ layer: index + 1, samples: 0, cumulativeProfit: 0 }))
   let totalLayerRuns = 0
@@ -305,6 +308,9 @@ function aggregateGames(games) {
         const reason = incident.event ?? incident.trigger?.type ?? 'unknown'
         failureReasons[reason] = (failureReasons[reason] ?? 0) + 1
       }
+      for (const [reason, count] of Object.entries(layer.summary.terminalFailureReasons)) {
+        terminalFailureReasons[reason] = (terminalFailureReasons[reason] ?? 0) + count
+      }
     }
   }
 
@@ -324,6 +330,7 @@ function aggregateGames(games) {
       ]),
     ),
     failureReasons,
+    terminalFailureReasons,
     cardTypes: finalizeCardTypes(cardTypes),
     gasHealth: {
       averageGasUsedRate: ratio(gasUsed, gasPool),
@@ -396,6 +403,23 @@ function collectCardTypeStats(cards, executionLog = []) {
     item.stolen += 1
   }
   return finalizeCardTypes(stats)
+}
+
+function collectTerminalFailureReasons(executionLog = []) {
+  const reasons = {}
+  for (const entry of executionLog) {
+    if (entry.action !== 'broadcast_tx' || entry.output?.success !== false) continue
+    const reason = terminalFailureReason(entry.output)
+    reasons[reason] = (reasons[reason] ?? 0) + 1
+  }
+  return reasons
+}
+
+function terminalFailureReason(output = {}) {
+  if (output.stolen === true) return 'target_stolen'
+  if (output.invalidOpportunity === true) return 'invalid_opportunity'
+  if (output.windowExpired === true) return 'window_expired'
+  return 'tx_failed'
 }
 
 function emptyAggregate() {
@@ -546,6 +570,7 @@ function parseArgs(argv) {
   }
   if (options.runs !== undefined) options.runs = Number(options.runs)
   if (options.layer !== undefined) options.layer = Number(options.layer)
+  if (options.roleLevel !== undefined) options.roleLevel = Number(options.roleLevel)
   if (options.fromLayer !== undefined) options.fromLayer = Number(options.fromLayer)
   if (options.toLayer !== undefined) options.toLayer = Number(options.toLayer)
   if (options.fullRun === 'true' || options.fullRun === true) options.fullRun = true

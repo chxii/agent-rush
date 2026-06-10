@@ -6,7 +6,9 @@ import {
   createStrategyDecider,
   runBatchGames,
   runFullGameSimulation,
+  runLayerSimulation,
 } from '../sim/run-batch.js'
+import { createToolSimulator } from '../src/core/ToolSimulator.js'
 
 test('C2 strategy deciders create distinct legal battle plans', () => {
   const cards = [
@@ -69,7 +71,25 @@ test('C2 batch aggregation reports strategy, role, card, gas, and half-loop metr
   assert.equal(typeof first.metrics.gasHealth.averageGasUsedRate, 'number')
   assert.equal(typeof first.metrics.halfLoopTriggerRate, 'number')
   assert.equal(typeof first.metrics.averageHalfLoopTriggersPerGame, 'number')
+  assert.equal(typeof first.metrics.terminalFailureReasons, 'object')
   assert.equal(Array.isArray(first.metrics.cumulativeProfitCurve), true)
+})
+
+test('terminal tx failures are reported without spending half-loop incidents', async () => {
+  const result = await runLayerSimulation({
+    seed: 'c2-terminal-failure',
+    cards: [card('fails', { type: 'arbitrage' })],
+    gasPool: 100,
+    layer: 3,
+    scene: 'dex_arb',
+    role: 'scout',
+    strategy: 'expert',
+    simulatorFactory: createTerminalFailureSimulatorFactory(),
+  })
+
+  assert.equal(result.summary.failures, 1)
+  assert.equal(result.summary.incidents, 0)
+  assert.equal(result.summary.terminalFailureReasons.tx_failed, 1)
 })
 
 function card(id, overrides = {}) {
@@ -85,5 +105,42 @@ function card(id, overrides = {}) {
     competitionLevel: 1,
     status: 'pending',
     actualProfit: 0,
+  }
+}
+
+function createTerminalFailureSimulatorFactory() {
+  return (options = {}) => {
+    const simulator = createToolSimulator({ ...options, botName: null })
+    return {
+      state: simulator.state,
+      snapshot() {
+        return simulator.snapshot()
+      },
+      execute(toolName, params = {}) {
+        if (toolName !== 'broadcast_tx') return simulator.execute(toolName, params)
+        const card = simulator.state.cards.find((item) => item.id === params.cardId)
+        const gas = Math.max(0, Math.round(Number(params.gas) || 0))
+        simulator.state.gasPool = Math.max(0, simulator.state.gasPool - 1)
+        simulator.state.gasUsed += 1
+        card.gasUsed = (card.gasUsed ?? 0) + 1
+        card.status = 'failed'
+        card.actualProfit = -0.001
+        card.resultReason = 'Scripted terminal failure.'
+        return {
+          success: false,
+          tool: 'broadcast_tx',
+          cardId: card.id,
+          message: card.resultReason,
+          status: 'failed',
+          stolen: false,
+          actualProfit: card.actualProfit,
+          actualGasConsumed: 1,
+          remainingGasPool: simulator.state.gasPool,
+          successProbability: 0,
+          stealProbability: 0,
+          windowExpired: false,
+        }
+      },
+    }
   }
 }

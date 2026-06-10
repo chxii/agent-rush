@@ -476,7 +476,6 @@ function recordEvent(card, kind, title, detail, meta = '') {
 function incidentTitle(type) {
   const titles = {
     [INCIDENT_TYPES.TARGET_STOLEN]: '目标被抢',
-    [INCIDENT_TYPES.TX_FAILED]: '交易失败',
     [INCIDENT_TYPES.GAS_INSUFFICIENT]: 'Gas 不足',
     [INCIDENT_TYPES.PLAYER_INTERVENTION]: '玩家干预',
     [INCIDENT_TYPES.TARGET_INVALID]: '目标失效',
