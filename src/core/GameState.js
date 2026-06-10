@@ -1,4 +1,5 @@
 import { createMemoryStorage } from './storage.js'
+import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 
 const STORAGE_KEY = 'agent_rush_v1'
 const SCHEMA_VERSION = 1
@@ -85,12 +86,18 @@ export const GameState = {
     this.saveProgress()
   },
 
-  checkFailure() {
-    return this.consecutiveLoss >= 2 && this.cumulativeProfit < -0.5
+  checkFailure(config = WIN_LOSS_CONFIG) {
+    return (
+      this.consecutiveLoss >= config.failure.consecutiveLossThreshold &&
+      this.cumulativeProfit < config.failure.cumulativeProfitBelow
+    )
   },
 
-  checkVictory() {
-    return this.currentLayer === 20 && this.cumulativeProfit > 10
+  checkVictory(config = WIN_LOSS_CONFIG) {
+    return (
+      this.currentLayer === config.victory.targetLayer &&
+      this.cumulativeProfit > config.victory.cumulativeProfitGreaterThan
+    )
   },
 
   gasPoolMaxForStage(layer) {

@@ -1,3 +1,5 @@
+import { calculateWinLossProgress } from '../core/WinLoss.js'
+
 let continueCallback = null
 let rowTimerIds = []
 
@@ -95,8 +97,11 @@ function formatProgress(roundResult, gameState) {
 
   const projectedProfit = roundEth((gameState.cumulativeProfit ?? 0) + (roundResult.netProfit ?? 0))
   const projectedLossStreak = (roundResult.netProfit ?? 0) < 0 ? (gameState.consecutiveLoss ?? 0) + 1 : 0
-  const profitToVictory = Math.max(0, roundEth(10 - projectedProfit))
-  const lossBuffer = Math.max(0, roundEth(projectedProfit + 0.5))
+  const progress = calculateWinLossProgress({
+    cumulativeProfit: projectedProfit,
+    consecutiveLoss: projectedLossStreak,
+    currentLayer: gameState.currentLayer,
+  })
 
   return `
     <section class="win-loss-progress">
@@ -104,15 +109,15 @@ function formatProgress(roundResult, gameState) {
       <div class="progress-grid">
         <div>
           <strong>当前处境</strong>
-          <span>预计累计收益 ${formatSignedEth(projectedProfit)} · 连亏 ${projectedLossStreak} / 2</span>
+          <span>预计累计收益 ${formatSignedEth(projectedProfit)} · 连亏 ${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold}</span>
         </div>
         <div>
           <strong>胜利</strong>
-          <span>到第 20 层且累计收益 > +10 ETH；还差 ${profitToVictory.toFixed(3)} ETH。</span>
+          <span>到第 ${progress.victory.targetLayer} 层且累计收益 > ${formatSignedEth(progress.victory.profitLine)}；还差 ${progress.victory.profitRemaining.toFixed(3)} ETH / ${progress.victory.layersRemaining} 层。</span>
         </div>
         <div>
           <strong>失败</strong>
-          <span>连亏达到 2 且累计收益 < -0.5 ETH；当前距离亏损线 ${lossBuffer.toFixed(3)} ETH。</span>
+          <span>连亏达到 ${progress.failure.consecutiveLossThreshold} 且累计收益 < ${formatSignedEth(progress.failure.profitLine)}；还可亏 ${progress.failure.lossesRemaining} 次，收益缓冲 ${progress.failure.profitBuffer.toFixed(3)} ETH。</span>
         </div>
       </div>
     </section>

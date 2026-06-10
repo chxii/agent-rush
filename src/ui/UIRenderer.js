@@ -1,5 +1,6 @@
 import { SCENES } from '../config/scenes.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
+import { calculateWinLossProgress } from '../core/WinLoss.js'
 
 const elements = {
   header: null,
@@ -104,6 +105,7 @@ export const UIRenderer = {
 
   renderHeader(gameState) {
     const sceneName = SCENES[gameState.currentScene]?.name ?? gameState.currentScene
+    const progress = calculateWinLossProgress(gameState)
     elements.header.innerHTML = `
       <div>
         <p class="label">Layer</p>
@@ -120,6 +122,16 @@ export const UIRenderer = {
       <div>
         <p class="label">Profit</p>
         <strong>${formatEth(gameState.cumulativeProfit)}</strong>
+      </div>
+      <div>
+        <p class="label">Victory Line</p>
+        <strong>${formatUnsignedEth(progress.victory.profitRemaining)} left</strong>
+        <small>${progress.victory.layersRemaining} layer${progress.victory.layersRemaining === 1 ? '' : 's'} to ${progress.victory.targetLayer}</small>
+      </div>
+      <div>
+        <p class="label">Loss Line</p>
+        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold} losses</strong>
+        <small>${progress.failure.lossesRemaining} loss${progress.failure.lossesRemaining === 1 ? '' : 'es'} left</small>
       </div>
     `
 
@@ -343,5 +355,9 @@ function riskBucket(risk) {
 function formatEth(value) {
   const number = Number(value) || 0
   return `${number >= 0 ? '+' : ''}${number.toFixed(2)} ETH`
+}
+
+function formatUnsignedEth(value) {
+  return `${Math.max(0, Number(value) || 0).toFixed(2)} ETH`
 }
 

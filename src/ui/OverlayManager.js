@@ -237,10 +237,14 @@ export const OverlayManager = {
     render()
   },
 
-  showGameOver(onRestart) {
+  showGameOver(stats, onRestart) {
     const panel = showOverlay(
       '游戏结束',
-      '<p class="overlay-copy">连续亏损或累计亏损过高，本轮模拟结束。已解锁 Agent 会保留。</p><button id="restart-game" class="primary-button" type="button">重新开始</button>',
+      `
+        <p class="overlay-copy">连续亏损或累计亏损过高，本轮模拟结束。已解锁 Agent 会保留。</p>
+        ${formatFinalStats(stats)}
+        <button id="restart-game" class="primary-button" type="button">重新开始</button>
+      `,
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
@@ -248,7 +252,11 @@ export const OverlayManager = {
   showVictory(stats, onRestart) {
     const panel = showOverlay(
       '胜利',
-      `<p class="overlay-copy">通关完成。累计收益 ${stats.cumulativeProfit.toFixed(2)} ETH。</p><button id="restart-game" class="primary-button" type="button">重新开始</button>`,
+      `
+        <p class="overlay-copy">通关完成。累计收益 ${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH。</p>
+        ${formatFinalStats(stats)}
+        <button id="restart-game" class="primary-button" type="button">重新开始</button>
+      `,
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
@@ -357,6 +365,30 @@ function formatBotEntry(bot) {
 
 function formatParagraphs(lines) {
   return lines.map((line) => `<p class="overlay-copy">${line}</p>`).join('')
+}
+
+function formatFinalStats(stats = {}) {
+  return `
+    <div class="final-stats">
+      <div>
+        <strong>Final Layer</strong>
+        <span>${stats.currentLayer ?? 1}</span>
+      </div>
+      <div>
+        <strong>Total Profit</strong>
+        <span>${formatSignedEth(stats.cumulativeProfit)}</span>
+      </div>
+      <div>
+        <strong>Loss Streak</strong>
+        <span>${Math.max(0, Math.round(Number(stats.consecutiveLoss) || 0))}</span>
+      </div>
+    </div>
+  `
+}
+
+function formatSignedEth(value) {
+  const number = Number(value) || 0
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)} ETH`
 }
 
 function agentLabel(agentId) {
