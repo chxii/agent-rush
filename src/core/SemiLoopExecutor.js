@@ -2,6 +2,7 @@ import { CARD_TOOL_SEQUENCES, SEMI_LOOP_CONFIG } from '../config/execution.js'
 import { battlePlanToGasAllocationArray } from './BattlePlan.js'
 import { createToolSimulator } from './ToolSimulator.js'
 import { RuleDecider } from './RuleDecider.js'
+import { consumePendingIntervention } from './PlayerIntervention.js'
 import {
   DECIDER_ACTIONS,
   INCIDENT_TYPES,
@@ -31,6 +32,7 @@ export async function runSemiLoopExecution(battlePlan, context = {}, options = {
     incidents: [],
     incidentDecisions: [],
     deciderCalls: { planInitial: 0, decideOnIncident: 0, summarize: 0 },
+    interventionUsed: Boolean(options.interventionState?.interventionUsed),
   }
   const executionLog = []
   const timestamp = createTimestampSource(options)
@@ -61,6 +63,7 @@ export async function runSemiLoopExecution(battlePlan, context = {}, options = {
       decider,
       fallbackDecider,
       timestamp,
+      interventionState: options.interventionState ?? null,
       reorderPending(updatedOrder) {
         queue = reorderQueue(queue, cursor, updatedOrder, workingCards)
       },
@@ -119,6 +122,8 @@ async function executeCard(card, state) {
       const result = await executeTool(card, action, params, state)
       syncWorkingCard(card, state.simulator)
 
+      if (await maybeHandlePlayerIntervention(card, state)) continue
+
       if (result.invalid && isGasInsufficient(result)) {
         await handleIncident(card, INCIDENT_TYPES.GAS_INSUFFICIENT, result, state)
         continue
@@ -135,6 +140,8 @@ async function executeCard(card, state) {
 
     const result = await executeTool(card, action, { cardId: card.id }, state)
     syncWorkingCard(card, state.simulator)
+
+    if (await maybeHandlePlayerIntervention(card, state)) continue
 
     if (action === 'monitor_mempool') {
       competitorGasBid = result.competitorGasBid ?? 0
@@ -189,6 +196,25 @@ async function handleIncident(card, type, triggerResult, state) {
   await applyIncidentDecision(card, decision, state)
 }
 
+async function maybeHandlePlayerIntervention(card, state) {
+  const instruction = consumePendingIntervention(state.interventionState)
+  if (!instruction) return false
+
+  state.telemetry.interventionUsed = true
+  await handleIncident(
+    card,
+    INCIDENT_TYPES.PLAYER_INTERVENTION,
+    {
+      tool: 'player_intervention',
+      message: 'Player intervention queued after the last executor action.',
+      playerInstruction: instruction.text,
+      instruction,
+    },
+    state,
+  )
+  return true
+}
+
 async function decideOnIncidentSafely(snapshot, state) {
   const useFallbackForLimit = state.telemetry.replans >= state.telemetry.maxReplans
   const primary = useFallbackForLimit ? state.fallbackDecider : state.decider
@@ -226,6 +252,8 @@ async function decideOnIncidentSafely(snapshot, state) {
 }
 
 async function applyIncidentDecision(card, decision, state) {
+  const targetCard = state.workingCards.get(decision.targetCardId) ?? card
+
   if (decision.updatedExecutionOrder.length > 0) state.reorderPending(decision.updatedExecutionOrder)
 
   if (decision.action === DECIDER_ACTIONS.CONTINUE) return
@@ -236,23 +264,23 @@ async function applyIncidentDecision(card, decision, state) {
     return
   }
 
-  if (TERMINAL_STATUSES.has(card.status)) return
+  if (TERMINAL_STATUSES.has(targetCard.status)) return
 
   if (decision.action === DECIDER_ACTIONS.ABANDON_CARD || decision.action === DECIDER_ACTIONS.SKIP_CARD) {
-    await executeTool(card, 'abandon_card', { cardId: card.id }, state)
-    syncWorkingCard(card, state.simulator)
+    await executeTool(targetCard, 'abandon_card', { cardId: targetCard.id }, state)
+    syncWorkingCard(targetCard, state.simulator)
     return
   }
 
   if (decision.action === DECIDER_ACTIONS.REPLACE_TX) {
-    await executeTool(card, 'replace_tx', { cardId: card.id, newGas: decision.gas }, state)
-    syncWorkingCard(card, state.simulator)
+    await executeTool(targetCard, 'replace_tx', { cardId: targetCard.id, newGas: decision.gas }, state)
+    syncWorkingCard(targetCard, state.simulator)
     return
   }
 
   if (decision.action === DECIDER_ACTIONS.RETRY_BROADCAST) {
-    await executeTool(card, 'broadcast_tx', buildBroadcastParams(card, state, 0, decision.gas), state)
-    syncWorkingCard(card, state.simulator)
+    await executeTool(targetCard, 'broadcast_tx', buildBroadcastParams(targetCard, state, 0, decision.gas), state)
+    syncWorkingCard(targetCard, state.simulator)
   }
 }
 
@@ -355,7 +383,7 @@ function buildIncidentSnapshot(card, type, triggerResult, state) {
     },
     playerContingency: state.battlePlan.contingencies?.[card.id] ?? 'fight',
     competitors: snapshot.competitors,
-    playerInstruction: state.options.playerInstruction ?? null,
+    playerInstruction: triggerResult.playerInstruction ?? state.options.playerInstruction ?? null,
   }
 }
 

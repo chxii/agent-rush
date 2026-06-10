@@ -1,4 +1,5 @@
 import { SCENES } from '../config/scenes.js'
+import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
 
 const elements = {
   header: null,
@@ -10,11 +11,13 @@ const elements = {
   timer: null,
   actionBar: null,
   selectionStatus: null,
+  interventionPanel: null,
 }
 
 let cardClickCallback = null
 let playClickCallback = null
 let decisionChangeCallback = null
+let interventionRequestCallback = null
 
 export const UIRenderer = {
   init() {
@@ -33,6 +36,13 @@ export const UIRenderer = {
       elements.selectionStatus.id = 'selection-status'
       elements.selectionStatus.className = 'selection-status'
       elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+    }
+
+    if (!elements.interventionPanel && elements.actionBar) {
+      elements.interventionPanel = document.createElement('div')
+      elements.interventionPanel.id = 'intervention-panel'
+      elements.interventionPanel.className = 'intervention-panel'
+      elements.actionBar.insertBefore(elements.interventionPanel, elements.actionBar.querySelector('#skip-button'))
     }
 
     elements.handArea?.addEventListener('click', (event) => {
@@ -70,6 +80,25 @@ export const UIRenderer = {
 
     elements.skipButton?.addEventListener('click', () => {
       if (playClickCallback) playClickCallback({ skip: true })
+    })
+
+    elements.interventionPanel?.addEventListener('click', (event) => {
+      const shortcutButton = event.target.closest('[data-intervention-shortcut]')
+      if (!shortcutButton || !interventionRequestCallback) return
+      interventionRequestCallback({
+        type: 'shortcut',
+        shortcutId: shortcutButton.dataset.interventionShortcut,
+      })
+    })
+
+    elements.interventionPanel?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      if (!interventionRequestCallback) return
+      const input = elements.interventionPanel.querySelector('[data-intervention-input]')
+      interventionRequestCallback({
+        type: 'natural',
+        text: input?.value ?? '',
+      })
     })
   },
 
@@ -177,6 +206,37 @@ export const UIRenderer = {
     `
   },
 
+  setInterventionState(state = null) {
+    if (!elements.interventionPanel) return
+
+    if (!state || state.phase !== 'execute') {
+      elements.interventionPanel.hidden = true
+      elements.interventionPanel.innerHTML = ''
+      return
+    }
+
+    const disabled = state.used || state.pending
+    elements.interventionPanel.hidden = false
+    elements.interventionPanel.innerHTML = `
+      <form class="intervention-form">
+        <label>
+          <span class="label">Intervention</span>
+          <input data-intervention-input type="text" placeholder="Tell Executor what to change" ${disabled ? 'disabled' : ''}>
+        </label>
+        <button class="secondary-button" type="submit" ${disabled ? 'disabled' : ''}>Send</button>
+      </form>
+      <div class="intervention-shortcuts">
+        ${Object.values(INTERVENTION_SHORTCUTS)
+          .map(
+            (shortcut) =>
+              `<button class="secondary-button" type="button" data-intervention-shortcut="${shortcut.id}" ${disabled ? 'disabled' : ''}>${shortcut.label}</button>`,
+          )
+          .join('')}
+      </div>
+      ${state.message ? `<small>${state.message}</small>` : ''}
+    `
+  },
+
   setPhase(phase) {
     document.body.dataset.phase = phase
     if (elements.actionBar) {
@@ -186,6 +246,7 @@ export const UIRenderer = {
     const isPlay = phase === 'play'
     if (elements.playButton) elements.playButton.disabled = !isPlay
     if (elements.skipButton) elements.skipButton.disabled = !isPlay
+    if (phase !== 'execute') this.setInterventionState(null)
   },
 
   setExecutionMode(mode) {
@@ -205,6 +266,10 @@ export const UIRenderer = {
 
   onDecisionChange(callback) {
     decisionChangeCallback = callback
+  },
+
+  onInterventionRequest(callback) {
+    interventionRequestCallback = callback
   },
 }
 

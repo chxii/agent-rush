@@ -1,4 +1,4 @@
-import { DECIDER_ACTIONS, normalizeIncidentDecision, normalizeInitialPlan } from '../core/IDecider.js'
+import { DECIDER_ACTIONS, INCIDENT_TYPES, normalizeIncidentDecision, normalizeInitialPlan } from '../core/IDecider.js'
 
 export class LLMDecider {
   constructor(executorAI, options = {}) {
@@ -25,6 +25,10 @@ export class LLMDecider {
   }
 
   async decideOnIncident(snapshot = {}) {
+    if (snapshot.event === INCIDENT_TYPES.PLAYER_INTERVENTION) {
+      return this.decideOnPlayerIntervention(snapshot)
+    }
+
     const response = await this.callStreaming(
       'IncidentResponse',
       snapshot,
@@ -43,6 +47,37 @@ export class LLMDecider {
       'SettlementReport',
       input,
       'summary',
+    )
+  }
+
+  async decideOnPlayerIntervention(snapshot = {}) {
+    const response = await this.callStreaming(
+      'PlayerIntervention',
+      {
+        playerInstruction: snapshot.playerInstruction ?? '',
+        currentExecutionState: {
+          remainingGasPool: snapshot.remainingGasPool ?? 0,
+          allCardStatuses: snapshot.allCardStatuses ?? [],
+        },
+      },
+      'reasoning',
+      snapshot.affectedCardId,
+    )
+
+    return normalizeIncidentDecision(
+      {
+        action: response.updatedGasAllocations?.length ? DECIDER_ACTIONS.REALLOCATE_GAS : DECIDER_ACTIONS.CONTINUE,
+        targetCardId: snapshot.affectedCardId,
+        gasAllocations: response.updatedGasAllocations,
+        updatedExecutionOrder: response.updatedExecutionOrder,
+        reasoning: response.interpretedIntent
+          ? `${response.interpretedIntent}：${response.reasoning ?? ''}`
+          : response.reasoning,
+      },
+      {
+        action: DECIDER_ACTIONS.CONTINUE,
+        targetCardId: snapshot.affectedCardId,
+      },
     )
   }
 

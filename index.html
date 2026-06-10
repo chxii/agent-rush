@@ -73,6 +73,7 @@
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
       UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
       UIRenderer.onDecisionChange((input) => RoundEngine.handleDecisionChange(input))
+      UIRenderer.onInterventionRequest((input) => RoundEngine.handleInterventionRequest(input))
       document.querySelector('#codex-button').addEventListener('click', () => {
         RoundEngine.pauseTimers()
         OverlayManager.showCodex(() => RoundEngine.resumeTimers())

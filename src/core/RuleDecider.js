@@ -1,6 +1,7 @@
 import { DEFAULT_CONTINGENCY } from '../config/decision.js'
 import { createBattlePlan, validateBattlePlan } from './BattlePlan.js'
 import { DECIDER_ACTIONS, INCIDENT_TYPES, normalizeInitialPlan } from './IDecider.js'
+import { parsePlayerInstruction } from './PlayerIntervention.js'
 
 export const RuleDecider = {
   createBattlePlan(cards, context = {}) {
@@ -39,6 +40,10 @@ export const RuleDecider = {
     const remainingGasPool = Math.max(0, Math.round(Number(snapshot.remainingGasPool) || 0))
     const affected = (snapshot.allCardStatuses ?? []).find((card) => card.id === affectedCardId)
     const currentGas = Math.max(0, Math.round(Number(affected?.allocatedGas) || 0))
+
+    if (eventType === INCIDENT_TYPES.PLAYER_INTERVENTION) {
+      return decideOnPlayerIntervention(snapshot)
+    }
 
     if (eventType === INCIDENT_TYPES.GAS_INSUFFICIENT) {
       const affordable = buildAffordableAllocations(snapshot.allCardStatuses ?? [], remainingGasPool)
@@ -180,6 +185,92 @@ function buildAffordableAllocations(cards, remainingGasPool) {
   }
 
   return allocations
+}
+
+function decideOnPlayerIntervention(snapshot) {
+  const instruction = parsePlayerInstruction(snapshot.playerInstruction)
+  if (instruction.mode !== 'shortcut') {
+    return {
+      action: DECIDER_ACTIONS.CONTINUE,
+      targetCardId: snapshot.affectedCardId,
+      reasoning: '当前保底模式，请用快捷指令。',
+    }
+  }
+
+  if (instruction.shortcutId === 'abandon_highest_risk') {
+    const target = highestRiskCard(snapshot.allCardStatuses ?? [])
+    return {
+      action: target ? DECIDER_ACTIONS.ABANDON_CARD : DECIDER_ACTIONS.CONTINUE,
+      targetCardId: target?.id ?? snapshot.affectedCardId,
+      reasoning: target
+        ? `Shortcut parsed: abandon highest-risk card ${target.id}.`
+        : 'Shortcut parsed, but no actionable card remains to abandon.',
+    }
+  }
+
+  if (instruction.shortcutId === 'focus_best_gas') {
+    const target = instruction.targetCardId
+      ? (snapshot.allCardStatuses ?? []).find((card) => card.id === instruction.targetCardId)
+      : bestExpectedValueCard(snapshot.allCardStatuses ?? [])
+    const gas = Math.max(0, Math.round(Number(snapshot.remainingGasPool) || 0))
+    return {
+      action: target && gas > 0 ? DECIDER_ACTIONS.REALLOCATE_GAS : DECIDER_ACTIONS.CONTINUE,
+      targetCardId: target?.id ?? snapshot.affectedCardId,
+      gasAllocations: target && gas > 0 ? [{ cardId: target.id, gas }] : [],
+      updatedExecutionOrder: target ? [target.id] : [],
+      reasoning: target
+        ? `Shortcut parsed: focus remaining gas on ${target.id}.`
+        : 'Shortcut parsed, but no actionable card remains for gas focus.',
+    }
+  }
+
+  if (instruction.shortcutId === 'fight_all') {
+    const allocations = distributeRemainingGas(snapshot.allCardStatuses ?? [], snapshot.remainingGasPool)
+    return {
+      action: allocations.length > 0 ? DECIDER_ACTIONS.REALLOCATE_GAS : DECIDER_ACTIONS.CONTINUE,
+      targetCardId: snapshot.affectedCardId,
+      gasAllocations: allocations,
+      updatedExecutionOrder: allocations.map((item) => item.cardId),
+      reasoning: allocations.length > 0
+        ? 'Shortcut parsed: keep all remaining targets live and spread gas across them.'
+        : 'Shortcut parsed, but no actionable cards remain.',
+    }
+  }
+
+  return {
+    action: DECIDER_ACTIONS.CONTINUE,
+    targetCardId: snapshot.affectedCardId,
+    reasoning: 'Unknown shortcut; keep the current plan.',
+  }
+}
+
+function actionableCards(cards) {
+  return cards.filter((card) => card.status === 'pending' || card.status === 'in_progress')
+}
+
+function highestRiskCard(cards) {
+  return actionableCards(cards).sort((a, b) => (b.displayedRisk ?? b.trueRisk ?? 0) - (a.displayedRisk ?? a.trueRisk ?? 0))[0]
+}
+
+function bestExpectedValueCard(cards) {
+  return actionableCards(cards).sort((a, b) => expectedValue(b) - expectedValue(a))[0]
+}
+
+function distributeRemainingGas(cards, remainingGasPool) {
+  const actionable = actionableCards(cards)
+  if (actionable.length === 0) return []
+
+  const totalGas = Math.max(0, Math.round(Number(remainingGasPool) || 0))
+  if (totalGas === 0) return []
+
+  const base = Math.floor(totalGas / actionable.length)
+  let remainder = totalGas - base * actionable.length
+
+  return actionable.map((card) => {
+    const extra = remainder > 0 ? 1 : 0
+    remainder -= extra
+    return { cardId: card.id, gas: base + extra }
+  })
 }
 
 function roundEth(value) {
