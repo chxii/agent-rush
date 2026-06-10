@@ -106,10 +106,10 @@ function round(value) {
 function riskReasonForType(type) {
   const reasons = {
     arbitrage: '跨池价差稳定，主要风险来自滑点',
-    sandwich: '交易窗口短，Gas 竞争会放大失败率',
+    sandwich: '必须卡住目标交易的前后相邻位置，错过排序即失败',
     nft_snipe: '稀有度判断依赖市场深度，波动较高',
-    front_run: '优先级费用敏感，容易被更高出价覆盖',
-    liquidation: '清算窗口明确，但状态刷新可能滞后',
+    front_run: '比拼给构建者的优先费（priority fee）出价，容易被更高出价覆盖',
+    liquidation: '头寸健康因子跌破阈值即可清算，但可能被抢先或价格回弹而失效',
   }
 
   return reasons[type] ?? '机会参数正常'
