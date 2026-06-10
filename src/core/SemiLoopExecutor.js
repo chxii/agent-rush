@@ -2,7 +2,7 @@ import { CARD_TOOL_SEQUENCES, SEMI_LOOP_CONFIG } from '../config/execution.js'
 import { battlePlanToGasAllocationArray } from './BattlePlan.js'
 import { createToolSimulator } from './ToolSimulator.js'
 import { RuleDecider } from './RuleDecider.js'
-import { consumePendingIntervention } from './PlayerIntervention.js'
+import { consumePendingIntervention, isShortcutInstruction } from './PlayerIntervention.js'
 import {
   DECIDER_ACTIONS,
   INCIDENT_TYPES,
@@ -218,7 +218,8 @@ async function maybeHandlePlayerIntervention(card, state) {
 
 async function decideOnIncidentSafely(snapshot, state) {
   const useFallbackForLimit = state.telemetry.replans >= state.telemetry.maxReplans
-  const primary = useFallbackForLimit ? state.fallbackDecider : state.decider
+  const useRuleForShortcut = isPlayerInterventionShortcut(snapshot)
+  const primary = useRuleForShortcut ? RuleDecider : useFallbackForLimit ? state.fallbackDecider : state.decider
 
   if (useFallbackForLimit) {
     state.telemetry.fallbackReasons.push({ reason: 'replan_limit', event: snapshot.trigger.type, cardId: snapshot.affectedCardId })
@@ -250,6 +251,10 @@ async function decideOnIncidentSafely(snapshot, state) {
       fallback: true,
     }
   }
+}
+
+function isPlayerInterventionShortcut(snapshot) {
+  return snapshot.event === INCIDENT_TYPES.PLAYER_INTERVENTION && isShortcutInstruction(snapshot.playerInstruction)
 }
 
 async function applyIncidentDecision(card, decision, state) {
