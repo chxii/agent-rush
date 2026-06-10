@@ -54,3 +54,47 @@ export const CARD_TYPE_TOOL_SENSITIVITY = {
   front_run: { price: 0.9, mempool: 1.35, broadcast: 0.9 },
   liquidation: { price: 0.85, mempool: 1, broadcast: 1.05 },
 }
+
+export const DEFAULT_CARD_TYPE_MECHANICS = {
+  gasSuccessWeight: 1,
+  stealProbabilityMultiplier: 1,
+  profitVariance: null,
+  hardTimeWindow: false,
+  frontRunBidCheck: false,
+  frontRunOverbidBonus: 0,
+  frontRunUnderbidPenalty: 0,
+  replaceRequiredBidMultiplier: null,
+}
+
+export const CARD_TYPE_MECHANICS = {
+  arbitrage: {
+    gasSuccessWeight: 0.75,
+    stealProbabilityMultiplier: 0.55,
+    profitVariance: 0.1,
+  },
+  sandwich: {
+    gasSuccessWeight: 1.75,
+    stealProbabilityMultiplier: 1.25,
+    profitVariance: 0.16,
+  },
+  nft_snipe: {
+    gasSuccessWeight: 0.9,
+    stealProbabilityMultiplier: 1.65,
+    profitVariance: 0.45,
+  },
+  front_run: {
+    gasSuccessWeight: 1.15,
+    stealProbabilityMultiplier: 1.2,
+    profitVariance: 0.18,
+    frontRunBidCheck: true,
+    frontRunOverbidBonus: 0.28,
+    frontRunUnderbidPenalty: 0.34,
+    replaceRequiredBidMultiplier: 1.02,
+  },
+  liquidation: {
+    gasSuccessWeight: 0.85,
+    stealProbabilityMultiplier: 0.9,
+    profitVariance: 0.05,
+    hardTimeWindow: true,
+  },
+}
