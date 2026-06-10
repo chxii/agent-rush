@@ -3,4 +3,5 @@ export const DEFAULT_CONTINGENCY = 'fight'
 
 export const DECISION_LIMITS = {
   minGasPerSelectedCard: 0,
+  maxSelectedCards: 3,
 }

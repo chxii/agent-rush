@@ -1,6 +1,7 @@
 import { BOTS } from '../config/bots.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { EnemyBotAI } from './EnemyBotAI.js'
+import { getRoleBuffs } from './RoleBuffs.js'
 import {
   BOT_STRENGTH_BY_NAME,
   CARD_TYPE_MECHANICS,
@@ -52,10 +53,16 @@ export function createToolState(options = {}, config = TOOL_SIMULATOR_CONFIG) {
   const layer = clampInt(options.layer ?? 1, 1, 20)
   const botName = options.botName === undefined ? activeBotForLayer(layer) : options.botName
   const botStrength = BOT_STRENGTH_BY_NAME[botName] ?? 0
+  const role = options.role ?? null
+  const roleLevel = options.roleLevel ?? 1
+  const roleBuffs = getRoleBuffs(role, roleLevel)
 
   return {
     layer,
     scene: options.scene ?? LAYER_CONFIG[layer]?.scene ?? 'dex_arb',
+    role,
+    roleLevel,
+    roleBuffs,
     botName,
     botStrength,
     gasPool: clampNumber(options.gasPool ?? 0, 0, Number.MAX_SAFE_INTEGER),
@@ -242,11 +249,15 @@ function replaceTx(state, params, rng, config) {
 
   const competitor = state.competitors[card.id] ?? calculateCompetition(state, card, rng, config, false)
   const mechanics = mechanicsFor(card.type)
-  const requiredBidMultiplier = mechanics.replaceRequiredBidMultiplier ?? config.replace.requiredBidMultiplier
+  const requiredBidMultiplier =
+    (mechanics.replaceRequiredBidMultiplier ?? config.replace.requiredBidMultiplier) *
+    state.roleBuffs.replaceRequiredBidMultiplier
   const requiredBid = Math.ceil((competitor.competitorGasBid || oldGas) * requiredBidMultiplier)
   const bidAdvantage = Math.max(0, newGas - requiredBid) / Math.max(requiredBid, 1)
   const suppressProbability = clamp(
-    config.replace.baseSuppressProbability + bidAdvantage * config.replace.bidAdvantageWeight,
+    config.replace.baseSuppressProbability +
+      bidAdvantage * config.replace.bidAdvantageWeight +
+      state.roleBuffs.replaceSuppressProbabilityBonus,
     0,
     config.replace.maxSuppressProbability,
   )
@@ -386,7 +397,8 @@ function calculateCompetition(state, card, rng, config, sampled) {
       (card.competitionLevel ?? 0) * config.mempool.competitionWeight -
       gasDefense) *
       sensitivity.mempool *
-      mechanics.stealProbabilityMultiplier,
+      mechanics.stealProbabilityMultiplier *
+      state.roleBuffs.stealProbabilityMultiplier,
   )
   const detectionChance = clamp01(config.mempool.detectionBase + stealProbability)
   const competitorDetected = sampled ? rng() < detectionChance : stealProbability > 0
@@ -510,6 +522,8 @@ function snapshotState(state) {
   return {
     layer: state.layer,
     scene: state.scene,
+    role: state.role,
+    roleLevel: state.roleLevel,
     botName: state.botName,
     gasPool: state.gasPool,
     gasUsed: state.gasUsed,

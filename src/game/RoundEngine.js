@@ -2,6 +2,7 @@ import { generateHand, injectScamCardNextHand } from '../core/CardGenerator.js'
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { createBattlePlan, validateBattlePlan } from '../core/BattlePlan.js'
 import { createInterventionState, requestPlayerIntervention } from '../core/PlayerIntervention.js'
+import { DECISION_LIMITS } from '../config/decision.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 import { SettlementPanel } from '../ui/SettlementPanel.js'
@@ -88,8 +89,8 @@ export const RoundEngine = {
   runScan(activeBotType) {
     this.currentHand = generateHand(
       this.gameState.currentScene,
-      this.gameState.activeAgents,
-      this.gameState.agentLevels,
+      this.gameState.role,
+      this.gameState.roleLevel,
     )
 
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
@@ -301,8 +302,7 @@ export const RoundEngine = {
   },
 
   getSelectionState(message = '') {
-    const layerConfig = LAYER_CONFIG[this.gameState?.currentLayer] ?? LAYER_CONFIG[20]
-    const maxCards = layerConfig.slots ?? 1
+    const maxCards = DECISION_LIMITS.maxSelectedCards
     const gasPool = this.gameState?.gasPool ?? 0
     const selectedCards = this.getSelectedCards()
     const selectedGas = selectedCards.reduce((sum, card) => sum + (this.decisionDraft.gasAllocations[card.id] ?? card.gasCost), 0)
@@ -381,8 +381,6 @@ export const RoundEngine = {
     this.gameState.currentScene = layerConfig.scene ?? layerConfig.scenes?.[0] ?? 'dex_arb'
     this.gameState.gasPoolMax = this.gameState.gasPoolMaxForStage(targetLayer)
     this.gameState.gasPool = this.gameState.gasPoolMax
-    unlockAgentsForLayer(this.gameState, targetLayer)
-    this.gameState.activeAgents = this.gameState.unlockedAgents.slice(0, layerConfig.slots)
     this.gameState.saveProgress()
 
     ProgressionEngine.startRun(this.gameState)
@@ -448,14 +446,6 @@ export const RoundEngine = {
     this._timerDone = null
     this._paused = false
   },
-}
-
-function unlockAgentsForLayer(gameState, layer) {
-  Object.entries(LAYER_CONFIG).forEach(([layerNumber, config]) => {
-    if (Number(layerNumber) <= layer && config.unlocks) {
-      gameState.unlockAgent(config.unlocks)
-    }
-  })
 }
 
 function buildEmergencyResult(cards, error) {

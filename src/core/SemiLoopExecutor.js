@@ -336,6 +336,8 @@ function createSimulator(battlePlan, context, options, initialGasPool) {
     rng: options.rng,
     seed: options.seed,
     botName: options.botName,
+    role: context.role ?? context.gameState?.role,
+    roleLevel: context.roleLevel ?? context.gameState?.roleLevel,
   })
 }
 

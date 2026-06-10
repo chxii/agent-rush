@@ -1,6 +1,7 @@
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
 import { WIN_LOSS_CONFIG } from '../config/winloss.js'
+import { ROLE_CONFIG } from '../config/roles.js'
 import { OverlayManager } from '../ui/OverlayManager.js'
 
 let roundStarter = null
@@ -13,7 +14,16 @@ export const ProgressionEngine = {
   startRun(gameState) {
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = Math.min(gameState.gasPool || gameState.gasPoolMax, gameState.gasPoolMax)
-    this.showSceneSelection(gameState, { forceRoster: true })
+
+    if (!gameState.role) {
+      OverlayManager.showRoleSelect(ROLE_CONFIG.roles, (roleId) => {
+        gameState.setRole(roleId)
+        this.showSceneSelection(gameState)
+      })
+      return
+    }
+
+    this.showSceneSelection(gameState)
   },
 
   afterRound(roundResult, gameState) {
@@ -32,77 +42,47 @@ export const ProgressionEngine = {
 
     const completedLayer = gameState.currentLayer
     if (isBossLayer(completedLayer)) {
-      OverlayManager.showBossReward(gameState.unlockedAgents, gameState.agentLevels, (agentId) => {
-        gameState.upgradeAgent(agentId)
-        this.unlockThenAdvance(gameState, completedLayer)
+      const nextLevel = gameState.upgradeRole()
+      OverlayManager.showBossReward(gameState.role, nextLevel, () => {
+        this.advanceAfterReward(gameState, completedLayer)
       })
-      return
-    }
-
-    this.unlockThenAdvance(gameState, completedLayer)
-  },
-
-  unlockThenAdvance(gameState, completedLayer) {
-    const unlockAgentId = getLayerConfig(completedLayer).unlocks
-
-    if (unlockAgentId && !gameState.unlockedAgents.includes(unlockAgentId)) {
-      gameState.unlockAgent(unlockAgentId)
-      OverlayManager.showAgentUnlock(unlockAgentId, () =>
-        this.advanceAfterReward(gameState, completedLayer, { forceRoster: true }),
-      )
       return
     }
 
     this.advanceAfterReward(gameState, completedLayer)
   },
 
-  advanceAfterReward(gameState, completedLayer, options = {}) {
+  advanceAfterReward(gameState, completedLayer) {
     gameState.currentLayer = Math.min(completedLayer + 1, WIN_LOSS_CONFIG.victory.targetLayer)
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = gameState.gasPoolMax
-    this.showSceneSelection(gameState, options)
+    this.showSceneSelection(gameState)
   },
 
-  showSceneSelection(gameState, options = {}) {
+  showSceneSelection(gameState) {
     const layerConfig = getLayerConfig(gameState.currentLayer)
     const availableScenes = layerConfig.scenes ?? [layerConfig.scene]
     if (availableScenes.length <= 1) {
       gameState.currentScene = availableScenes[0]
-      this.beginLayer(gameState, options)
+      this.beginLayer(gameState)
       return
     }
 
     OverlayManager.showSceneSelect(availableScenes, (sceneId) => {
       gameState.currentScene = sceneId
-      this.beginLayer(gameState, options)
+      this.beginLayer(gameState)
     })
   },
 
-  beginLayer(gameState, options = {}) {
-    if (options.forceRoster) {
-      this.showAgentRoster(gameState)
-      return
-    }
-
-    ensureActiveRoster(gameState)
+  beginLayer(gameState) {
     gameState.saveProgress()
     if (roundStarter) roundStarter(gameState)
-  },
-
-  showAgentRoster(gameState) {
-    const slots = getLayerConfig(gameState.currentLayer).slots
-    OverlayManager.showAgentRoster(gameState.unlockedAgents, gameState.agentLevels, slots, (activeAgents) => {
-      gameState.activeAgents = activeAgents.slice(0, slots)
-      gameState.saveProgress()
-      if (roundStarter) roundStarter(gameState)
-    })
   },
 
   getCurrentLayerConfig(gameState) {
     return {
       layer: gameState.currentLayer,
       scene: gameState.currentScene,
-      slots: getLayerConfig(gameState.currentLayer).slots,
       bot: EnemyBotAI.getActiveBot(gameState.currentLayer),
       isBoss: isBossLayer(gameState.currentLayer),
     }
@@ -126,26 +106,16 @@ function isBossLayer(layer) {
 }
 
 function restartGame(gameState) {
+  gameState.role = null
+  gameState.roleLevel = 1
   gameState.currentLayer = 1
   gameState.currentScene = 'dex_arb'
-  gameState.activeAgents = ['searcher']
   gameState.gasPoolMax = gameState.gasPoolMaxForStage(1)
   gameState.gasPool = gameState.gasPoolMax
   gameState.cumulativeProfit = 0
   gameState.consecutiveLoss = 0
+  gameState.genesisHistory = { lastTwoRounds: [], boostedType: null }
+  gameState.saveProgress()
   OverlayManager.hideAll()
   ProgressionEngine.startRun(gameState)
-}
-
-function ensureActiveRoster(gameState) {
-  const slots = getLayerConfig(gameState.currentLayer).slots
-  const active = gameState.activeAgents.filter((agentId) => gameState.unlockedAgents.includes(agentId)).slice(0, slots)
-
-  gameState.unlockedAgents.forEach((agentId) => {
-    if (active.length < slots && !active.includes(agentId)) {
-      active.push(agentId)
-    }
-  })
-
-  gameState.activeAgents = active
 }

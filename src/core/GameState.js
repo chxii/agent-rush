@@ -1,16 +1,18 @@
 import { createMemoryStorage } from './storage.js'
 import { WIN_LOSS_CONFIG } from '../config/winloss.js'
+import { getBaseGasPoolForLayer, getRoleBuffs, isValidRole, nextRoleLevel } from './RoleBuffs.js'
 
 const STORAGE_KEY = 'agent_rush_v1'
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
+const LEGACY_UNLOCKED_KEY = `unlocked${'Agents'}`
+const LEGACY_LEVELS_KEY = `agent${'Levels'}`
+const LEGACY_ACTIVE_KEY = `active${'Agents'}`
 
-export const GameState = {
-  storage: createMemoryStorage(),
-  unlockedAgents: ['searcher'],
-  agentLevels: { searcher: 1, riskAnalyzer: 1, executor: 1, strategist: 1 },
+const DEFAULT_STATE = {
+  role: null,
+  roleLevel: 1,
   currentLayer: 1,
   currentScene: 'dex_arb',
-  activeAgents: ['searcher'],
   gasPool: 150,
   gasPoolMax: 150,
   cumulativeProfit: 0,
@@ -19,18 +21,22 @@ export const GameState = {
   genesisHistory: { lastTwoRounds: [], boostedType: null },
   tutorialSeen: false,
   seenBots: [],
+}
+
+export const GameState = {
+  storage: createMemoryStorage(),
+  ...clone(DEFAULT_STATE),
 
   init(options = {}) {
     if (options.storage) this.setStorageAdapter(options.storage)
+    resetState(this)
 
     const progress = this.loadProgress()
-
     if (progress) {
-      this.unlockedAgents = mergeUnique(this.unlockedAgents, progress.unlockedAgents)
-      this.agentLevels = { ...this.agentLevels, ...progress.agentLevels }
+      this.role = progress.role
+      this.roleLevel = progress.roleLevel
       this.tutorialSeen = progress.tutorialSeen
       this.seenBots = progress.seenBots
-      this.activeAgents = this.activeAgents.filter((agentId) => this.unlockedAgents.includes(agentId))
     }
 
     this.gasPoolMax = this.gasPoolMaxForStage(this.currentLayer)
@@ -47,8 +53,8 @@ export const GameState = {
       STORAGE_KEY,
       JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
-        unlockedAgents: this.unlockedAgents,
-        agentLevels: this.agentLevels,
+        role: this.role,
+        roleLevel: this.roleLevel,
         tutorialSeen: this.tutorialSeen,
         seenBots: this.seenBots,
       }),
@@ -62,10 +68,11 @@ export const GameState = {
 
       const parsed = JSON.parse(raw)
       if (parsed.schemaVersion !== SCHEMA_VERSION) return null
+      if (parsed[LEGACY_UNLOCKED_KEY] || parsed[LEGACY_LEVELS_KEY] || parsed[LEGACY_ACTIVE_KEY]) return null
 
       return {
-        unlockedAgents: Array.isArray(parsed.unlockedAgents) ? parsed.unlockedAgents : [],
-        agentLevels: isRecord(parsed.agentLevels) ? parsed.agentLevels : {},
+        role: isValidRole(parsed.role) ? parsed.role : null,
+        roleLevel: Math.max(1, Math.round(Number(parsed.roleLevel) || 1)),
         tutorialSeen: parsed.tutorialSeen === true,
         seenBots: Array.isArray(parsed.seenBots) ? parsed.seenBots : [],
       }
@@ -101,24 +108,27 @@ export const GameState = {
   },
 
   gasPoolMaxForStage(layer) {
-    if (layer <= 4) return 150
-    if (layer <= 7) return 200
-    if (layer <= 12) return 250
-    if (layer <= 17) return 300
-    return 350
+    const baseGasPool = getBaseGasPoolForLayer(layer)
+    const buffs = getRoleBuffs(this.role, this.roleLevel)
+    return Math.round(baseGasPool * buffs.gasPoolMultiplier)
   },
 
-  unlockAgent(agentId) {
-    if (!this.unlockedAgents.includes(agentId)) {
-      this.unlockedAgents.push(agentId)
-    }
+  setRole(role) {
+    if (!isValidRole(role)) return false
+    this.role = role
+    this.roleLevel = 1
+    this.gasPoolMax = this.gasPoolMaxForStage(this.currentLayer)
+    this.gasPool = this.gasPoolMax
     this.saveProgress()
+    return true
   },
 
-  upgradeAgent(agentId) {
-    const currentLevel = this.agentLevels[agentId] ?? 1
-    this.agentLevels[agentId] = Math.min(3, currentLevel + 1)
+  upgradeRole() {
+    this.roleLevel = nextRoleLevel(this.roleLevel)
+    this.gasPoolMax = this.gasPoolMaxForStage(this.currentLayer)
+    this.gasPool = Math.min(this.gasPool, this.gasPoolMax)
     this.saveProgress()
+    return this.roleLevel
   },
 
   markTutorialSeen() {
@@ -138,12 +148,13 @@ export const GameState = {
   },
 }
 
-function mergeUnique(base, incoming) {
-  return [...new Set([...base, ...(Array.isArray(incoming) ? incoming : [])])]
+function resetState(target) {
+  const storage = target.storage
+  Object.assign(target, clone(DEFAULT_STATE), { storage })
 }
 
-function isRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
+function clone(value) {
+  return JSON.parse(JSON.stringify(value))
 }
 
 function roundEth(value) {

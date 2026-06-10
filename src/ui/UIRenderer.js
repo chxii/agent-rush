@@ -1,5 +1,6 @@
 import { SCENES } from '../config/scenes.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
+import { ROLE_CONFIG } from '../config/roles.js'
 import { calculateWinLossProgress } from '../core/WinLoss.js'
 
 const elements = {
@@ -135,22 +136,21 @@ export const UIRenderer = {
       </div>
     `
 
-    this.renderAgents(gameState)
+    this.renderRole(gameState)
   },
 
-  renderAgents(gameState) {
-    elements.agentPanel.innerHTML = gameState.unlockedAgents
-      .map((agentId) => {
-        const isActive = gameState.activeAgents.includes(agentId)
-        const level = gameState.agentLevels[agentId] ?? 1
-        return `
-          <div class="agent ${isActive ? 'active' : ''}">
-            <span>${agentLabel(agentId)}</span>
-            <b>Lv.${level}</b>
-          </div>
-        `
-      })
-      .join('')
+  renderRole(gameState) {
+    const role = ROLE_CONFIG.roles[gameState.role]
+    elements.agentPanel.innerHTML = `
+      <div class="agent active">
+        <span>${role?.name ?? 'No role selected'}</span>
+        <b>Lv.${gameState.roleLevel ?? 1}</b>
+      </div>
+      <div class="agent">
+        <span>${role?.tagline ?? 'Choose a starting role'}</span>
+        <b>${role?.buffSummary ?? ''}</b>
+      </div>
+    `
   },
 
   renderHand(cards, selectedIds = [], options = {}) {
@@ -179,7 +179,7 @@ export const UIRenderer = {
             <span class="metric">Gas ${card.gasCost} Gwei</span>
             <span class="metric risk-${riskBucket(card.displayedRisk)}">Risk ${riskPercent}%</span>
             <span class="metric">Window ${card.timeWindowSec}s</span>
-            <span class="reason">${card.isScam ? '! ' : ''}${card.riskReason}</span>
+            <span class="reason">${card.riskReason}</span>
             ${isSelected && isPlayable ? renderDecisionControls(card, gasValue, contingencyValue) : ''}
             ${disabledReason ? `<span class="blocked-reason">${disabledReason}</span>` : ''}
           </${tagName}>
@@ -321,17 +321,6 @@ function renderDecisionControls(card, gasValue, contingencyValue) {
 
 function contingencyOption(value, label, selectedValue) {
   return `<option value="${value}" ${value === selectedValue ? 'selected' : ''}>${label}</option>`
-}
-
-function agentLabel(agentId) {
-  const labels = {
-    searcher: 'Searcher',
-    riskAnalyzer: 'Risk Analyzer',
-    executor: 'Executor',
-    strategist: 'Strategist',
-  }
-
-  return labels[agentId] ?? agentId
 }
 
 function typeLabel(type) {
