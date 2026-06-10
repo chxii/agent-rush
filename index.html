@@ -58,6 +58,7 @@
 
     <script type="module">
       import { GameState } from './src/core/GameState.js'
+      import { createBrowserStorage } from './src/core/storage.js'
       import { RoundEngine } from './src/game/RoundEngine.js'
       import { ProgressionEngine } from './src/game/ProgressionEngine.js'
       import { UIRenderer } from './src/ui/UIRenderer.js'
@@ -66,7 +67,7 @@
 
       UIRenderer.init()
       ExecutorAI.init()
-      GameState.init()
+      GameState.init({ storage: createBrowserStorage(window.localStorage) })
       ProgressionEngine.setRoundStarter((gameState) => RoundEngine.startRound(gameState))
 
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))

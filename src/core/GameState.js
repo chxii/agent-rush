@@ -1,7 +1,10 @@
+import { createMemoryStorage } from './storage.js'
+
 const STORAGE_KEY = 'agent_rush_v1'
 const SCHEMA_VERSION = 1
 
 export const GameState = {
+  storage: createMemoryStorage(),
   unlockedAgents: ['searcher'],
   agentLevels: { searcher: 1, riskAnalyzer: 1, executor: 1, strategist: 1 },
   currentLayer: 1,
@@ -16,7 +19,9 @@ export const GameState = {
   tutorialSeen: false,
   seenBots: [],
 
-  init() {
+  init(options = {}) {
+    if (options.storage) this.setStorageAdapter(options.storage)
+
     const progress = this.loadProgress()
 
     if (progress) {
@@ -32,8 +37,12 @@ export const GameState = {
     return this
   },
 
+  setStorageAdapter(storage) {
+    this.storage = storage ?? createMemoryStorage()
+  },
+
   saveProgress() {
-    localStorage.setItem(
+    this.storage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
@@ -47,7 +56,7 @@ export const GameState = {
 
   loadProgress() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
+      const raw = this.storage.getItem(STORAGE_KEY)
       if (!raw) return null
 
       const parsed = JSON.parse(raw)

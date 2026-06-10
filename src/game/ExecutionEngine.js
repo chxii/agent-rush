@@ -1,4 +1,6 @@
 import { EnemyBotAI } from '../core/EnemyBotAI.js'
+import { createToolSimulator } from '../core/ToolSimulator.js'
+import { createRandomSource } from '../core/rng.js'
 import { getFallbackPlan } from '../ai/ExecutorMock.js'
 import { SchemaValidator } from '../ai/SchemaValidator.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
@@ -10,6 +12,14 @@ export const ExecutionEngine = {
   async runRigidMode(cards, gasAllocations, gameState) {
     const executionStartMs = performance.now()
     const allocationMap = new Map(gasAllocations.map((item) => [item.cardId, item.gas]))
+    const simulator = createToolSimulator({
+      cards,
+      allocations: gasAllocations,
+      gasPool: gameState.gasPool,
+      layer: gameState.currentLayer,
+      scene: gameState.currentScene,
+      rng: createRandomSource(),
+    })
     const executedCards = []
 
     for (const card of cards) {
@@ -28,9 +38,7 @@ export const ExecutionEngine = {
           continue
         }
 
-        recordToolEvent(workingCard, 'broadcast_tx', { type: card.type, gas: allocatedGas })
-
-        const competition = EnemyBotAI.compete(card, gameState)
+        const competition = EnemyBotAI.compete(card, gameState, { rng: () => 1 })
         if (competition.stolen) {
           workingCard.botName = competition.botName
           failCard(workingCard, `被 ${competition.botName} 抢占`, -gasLossToEth(card.gasCost), 'bot')
@@ -39,7 +47,12 @@ export const ExecutionEngine = {
           continue
         }
 
-        resolveCardSuccess(workingCard)
+        const toolResult = simulator.execute('broadcast_tx', {
+          cardId: card.id,
+          gas: allocatedGas,
+        })
+        recordToolEvent(workingCard, 'broadcast_tx', { type: card.type, gas: allocatedGas }, toolResult.message)
+        syncWorkingCardFromSimulator(workingCard, simulator, card.id)
         recordResultEvent(workingCard)
         executedCards.push(workingCard)
         await delay(RIGID_STEP_DELAY_MS)
@@ -69,6 +82,14 @@ export const ExecutionEngine = {
     })
 
     const allocationMap = new Map(initialPlan.gasAllocations.map((item) => [item.cardId, item.gas]))
+    const simulator = createToolSimulator({
+      cards,
+      allocations: initialPlan.gasAllocations,
+      gasPool: initialGasPool,
+      layer: gameState.currentLayer,
+      scene: gameState.currentScene,
+      rng: createRandomSource(),
+    })
     const orderedCards = initialPlan.executionOrder
       .map((cardId) => cards.find((card) => card.id === cardId))
       .filter(Boolean)
@@ -98,7 +119,7 @@ export const ExecutionEngine = {
 
         recordEvent(workingCard, 'plan', 'Executor 拆解步骤', singleCardPlan.reasoning)
 
-        const competition = EnemyBotAI.compete(card, gameState)
+        const competition = EnemyBotAI.compete(card, gameState, { rng: () => 1 })
         if (competition.stolen) {
           workingCard.botName = competition.botName
           recordEvent(workingCard, 'bot', '对手 Bot 抢占', `${competition.botName} 提高出价，正在争夺这张牌。`)
@@ -146,21 +167,40 @@ export const ExecutionEngine = {
         for (const step of singleCardPlan.steps) {
           if (abandoned) break
 
-          recordToolEvent(workingCard, step.action, step.params ?? {}, step.description)
+          const toolParams = {
+            ...(step.params ?? {}),
+            cardId: step.params?.cardId ?? card.id,
+            gas: step.params?.gas ?? allocatedGas,
+          }
+          const toolResult = simulator.execute(step.action, toolParams)
+          recordToolEvent(workingCard, step.action, toolParams, toolResult.message ?? step.description)
           executionLog.push({
             timestampMs: Date.now(),
             cardId: card.id,
             action: step.action,
-            input: step.params ?? {},
-            output: { description: step.description },
-            success: true,
+            input: toolParams,
+            output: toolResult,
+            success: toolResult.success === true,
           })
+
+          if (isTerminalToolAction(step.action) && !toolResult.invalid) {
+            syncWorkingCardFromSimulator(workingCard, simulator, card.id)
+            abandoned = workingCard.status === 'abandoned'
+            break
+          }
 
           await delay(ADAPTIVE_STEP_DELAY_MS)
         }
 
         if (!abandoned) {
-          resolveCardSuccess(workingCard)
+          if (!isTerminalStatus(workingCard.status)) {
+            const fallbackResult = simulator.execute('broadcast_tx', {
+              cardId: card.id,
+              gas: allocatedGas,
+            })
+            recordToolEvent(workingCard, 'broadcast_tx', { cardId: card.id, gas: allocatedGas }, fallbackResult.message)
+            syncWorkingCardFromSimulator(workingCard, simulator, card.id)
+          }
           if (repaired && workingCard.status === 'success') {
             workingCard.resultReason = '迭代修复后完成'
           }
@@ -195,10 +235,6 @@ export const ExecutionEngine = {
       decisionHighlights: settlementReport.decisionHighlights,
     }
   },
-}
-
-export function uniformRandom(min, max) {
-  return min + Math.random() * (max - min)
 }
 
 async function callExecutor(executorAI, callType, input, options = {}) {
@@ -237,15 +273,23 @@ function createWorkingCard(card, allocatedGas) {
   }
 }
 
-function resolveCardSuccess(card) {
-  const success = Math.random() < 1 - card.trueRisk
-  if (success) {
-    card.status = 'success'
-    card.actualProfit = roundEth(card.expectedProfit * uniformRandom(0.85, 1.15))
-    card.resultReason = card.resultReason || '链上确认成功'
-  } else {
-    failCard(card, '链上执行失败', -gasLossToEth(card.gasCost))
-  }
+function syncWorkingCardFromSimulator(workingCard, simulator, cardId) {
+  const simulatedCard = simulator.snapshot().cards.find((card) => card.id === cardId)
+  if (!simulatedCard) return
+
+  workingCard.status = simulatedCard.status
+  workingCard.actualProfit = simulatedCard.actualProfit
+  workingCard.allocatedGas = simulatedCard.allocatedGas
+  workingCard.gasUsed = simulatedCard.gasUsed
+  workingCard.resultReason = simulatedCard.resultReason
+}
+
+function isTerminalToolAction(action) {
+  return action === 'broadcast_tx' || action === 'abandon_card'
+}
+
+function isTerminalStatus(status) {
+  return status === 'success' || status === 'failed' || status === 'abandoned'
 }
 
 function failCard(card, reason, profit, kind = 'failure') {
@@ -280,7 +324,7 @@ function buildRoundResult(executedCards) {
   return {
     cards: executedCards,
     netProfit: roundEth(executedCards.reduce((sum, card) => sum + (card.actualProfit ?? 0), 0)),
-    gasUsed: executedCards.reduce((sum, card) => sum + (card.allocatedGas ?? card.gasCost ?? 0), 0),
+    gasUsed: executedCards.reduce((sum, card) => sum + (card.gasUsed ?? card.allocatedGas ?? card.gasCost ?? 0), 0),
   }
 }
 
