@@ -336,6 +336,8 @@ function createSimulator(battlePlan, context, options, initialGasPool) {
     rng: options.rng,
     seed: options.seed,
     botName: options.botName,
+    forceSteal: options.forceSteal,
+    config: options.toolConfig,
     role: context.role ?? context.gameState?.role,
     roleLevel: context.roleLevel ?? context.gameState?.roleLevel,
   })

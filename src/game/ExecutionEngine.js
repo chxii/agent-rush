@@ -44,7 +44,9 @@ export const ExecutionEngine = {
         rng: options.rng ?? createRandomSource(),
         maxReplans: options.maxReplans,
         config: options.config ?? SEMI_LOOP_CONFIG,
+        toolConfig: options.toolConfig,
         interventionState: options.interventionState,
+        forceSteal: options.forceSteal,
         delay: (ms) => delay(ms),
         hooks: createUiHooks({
           gameState,

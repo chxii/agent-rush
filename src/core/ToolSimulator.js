@@ -1,6 +1,5 @@
 import { BOTS } from '../config/bots.js'
 import { LAYER_CONFIG } from '../config/scenes.js'
-import { EnemyBotAI } from './EnemyBotAI.js'
 import { getRoleBuffs } from './RoleBuffs.js'
 import {
   BOT_STRENGTH_BY_NAME,
@@ -17,6 +16,7 @@ export function createToolSimulator(options = {}) {
   const rng = options.rng ?? createRandomSource(options.seed)
   const config = options.config ?? TOOL_SIMULATOR_CONFIG
   const state = createToolState(options, config)
+  const consumeForceSteal = createForceStealConsumer(options.forceSteal)
 
   return {
     state,
@@ -26,7 +26,7 @@ export function createToolSimulator(options = {}) {
         case 'fetch_prices':
           return fetchPrices(state, params, rng, config)
         case 'monitor_mempool':
-          return monitorMempool(state, params, rng, config)
+          return monitorMempool(state, params, rng, config, consumeForceSteal)
         case 'broadcast_tx':
           return broadcastTx(state, params, rng, config)
         case 'replace_tx':
@@ -106,12 +106,12 @@ function fetchPrices(state, params, rng, config) {
   }
 }
 
-function monitorMempool(state, params, rng, config) {
+function monitorMempool(state, params, rng, config, consumeForceSteal) {
   const lookup = getMutableCard(state, params.cardId, 'monitor_mempool')
   if (!lookup.ok) return lookup.result
 
   const { card } = lookup
-  const result = calculateCompetition(state, card, rng, config, true)
+  const result = calculateCompetition(state, card, rng, config, true, consumeForceSteal)
   state.competitors[card.id] = result
 
   return {
@@ -254,12 +254,18 @@ function replaceTx(state, params, rng, config) {
     state.roleBuffs.replaceRequiredBidMultiplier
   const requiredBid = Math.ceil((competitor.competitorGasBid || oldGas) * requiredBidMultiplier)
   const bidAdvantage = Math.max(0, newGas - requiredBid) / Math.max(requiredBid, 1)
+  const maxSuppressProbability = botMechanicValue(
+    config,
+    state.botName,
+    'maxSuppressProbability',
+    config.replace.maxSuppressProbability,
+  )
   const suppressProbability = clamp(
     config.replace.baseSuppressProbability +
       bidAdvantage * config.replace.bidAdvantageWeight +
       state.roleBuffs.replaceSuppressProbabilityBonus,
     0,
-    config.replace.maxSuppressProbability,
+    maxSuppressProbability,
   )
   const suppressSucceeded = newGas >= requiredBid && rng() < suppressProbability
 
@@ -369,7 +375,7 @@ function abandonCard(state, params, config) {
   }
 }
 
-function calculateCompetition(state, card, rng, config, sampled) {
+function calculateCompetition(state, card, rng, config, sampled, consumeForceSteal = () => false) {
   if (!state.botName) {
     return {
       competitorDetected: false,
@@ -378,12 +384,12 @@ function calculateCompetition(state, card, rng, config, sampled) {
     }
   }
 
-  if (EnemyBotAI.consumeForcedSteal()) {
+  if (consumeForceSteal()) {
     const baseGas = card.allocatedGas ?? card.gasCost ?? 0
     return {
       competitorDetected: true,
       competitorName: state.botName,
-      competitorGasBid: Math.ceil(baseGas * config.mempool.competitorBidMultiplier + config.mempool.competitorBidMinLift),
+      competitorGasBid: competitorGasBidFor(state, baseGas, config),
       stealProbability: 1,
       forced: true,
     }
@@ -406,9 +412,7 @@ function calculateCompetition(state, card, rng, config, sampled) {
 
   return {
     competitorDetected,
-    competitorGasBid: competitorDetected
-      ? Math.ceil(baseGas * config.mempool.competitorBidMultiplier + config.mempool.competitorBidMinLift)
-      : 0,
+    competitorGasBid: competitorDetected ? competitorGasBidFor(state, baseGas, config) : 0,
     stealProbability: round(stealProbability, 4),
   }
 }
@@ -515,6 +519,37 @@ function mechanicsFor(type) {
   return {
     ...DEFAULT_CARD_TYPE_MECHANICS,
     ...(CARD_TYPE_MECHANICS[type] ?? {}),
+  }
+}
+
+function competitorGasBidFor(state, baseGas, config) {
+  const multiplier = botMechanicValue(
+    config,
+    state.botName,
+    'competitorBidMultiplier',
+    config.mempool.competitorBidMultiplier,
+  )
+  const minLift = botMechanicValue(
+    config,
+    state.botName,
+    'competitorBidMinLift',
+    config.mempool.competitorBidMinLift,
+  )
+  return Math.ceil(baseGas * multiplier + minLift)
+}
+
+function botMechanicValue(config, botName, key, fallback) {
+  return config.botMechanicOverrides?.[botName]?.[key] ?? fallback
+}
+
+function createForceStealConsumer(forceSteal) {
+  if (typeof forceSteal === 'function') return () => forceSteal() === true
+
+  let pending = forceSteal === true
+  return () => {
+    if (!pending) return false
+    pending = false
+    return true
   }
 }
 
