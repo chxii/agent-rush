@@ -57,6 +57,19 @@ test('GameState starts a new run while preserving tutorial guide progress only',
   assert.equal('seenBots' in GameState, false)
 })
 
+test('GameState persists sanitized terminal display id with guide progress', () => {
+  const storage = createMemoryStorage()
+  GameState.init({ storage })
+
+  assert.equal(GameState.setDisplayId('  alpha<script>_unit-123456789  '), 'alphascript_unit')
+  GameState.markTutorialSeen()
+
+  GameState.init({ storage })
+
+  assert.equal(GameState.displayId, 'alphascript_unit')
+  assert.equal(GameState.tutorialSeen, true)
+})
+
 test('GameState role upgrades cap at configured max level', () => {
   const storage = createMemoryStorage()
   GameState.init({ storage })

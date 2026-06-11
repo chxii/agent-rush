@@ -19,6 +19,16 @@ test('scout role scans more cards while other roles use the base count', () => {
   assert.ok(scout.length > base.length)
 })
 
+test('scout scan bonus scales by role level', () => {
+  const level1 = generateHand('dex_arb', ROLE_IDS.SCOUT, 1, { rng: createSequenceRng(repeating(0.5, 100)) })
+  const level2 = generateHand('dex_arb', ROLE_IDS.SCOUT, 2, { rng: createSequenceRng(repeating(0.5, 100)) })
+  const level3 = generateHand('dex_arb', ROLE_IDS.SCOUT, 3, { rng: createSequenceRng(repeating(0.5, 100)) })
+
+  assert.equal(level1.length, 4)
+  assert.equal(level2.length, 5)
+  assert.equal(level3.length, 6)
+})
+
 test('resist role reduces steal probability under the same mempool pressure', () => {
   const normal = monitorWithRole(ROLE_IDS.SCOUT)
   const resist = monitorWithRole(ROLE_IDS.RESIST)

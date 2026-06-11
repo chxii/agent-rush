@@ -84,7 +84,11 @@ export const GameState = {
   applyRoundResult(netProfit) {
     const normalizedProfit = Number(netProfit) || 0
     this.cumulativeProfit = roundEth(this.cumulativeProfit + normalizedProfit)
-    this.consecutiveLoss = normalizedProfit < 0 ? this.consecutiveLoss + 1 : 0
+    if (normalizedProfit < 0) {
+      this.consecutiveLoss += 1
+    } else if (normalizedProfit > 0) {
+      this.consecutiveLoss = 0
+    }
     this.saveProgress()
   },
 

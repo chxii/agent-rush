@@ -101,7 +101,11 @@ export async function runFullGameSimulation(options = {}) {
     layers.push(layerResult)
 
     cumulativeProfit = roundEth(cumulativeProfit + layerResult.summary.netProfit)
-    consecutiveLoss = layerResult.summary.netProfit < 0 ? consecutiveLoss + 1 : 0
+    if (layerResult.summary.netProfit < 0) {
+      consecutiveLoss += 1
+    } else if (layerResult.summary.netProfit > 0) {
+      consecutiveLoss = 0
+    }
 
     if (
       consecutiveLoss >= WIN_LOSS_CONFIG.failure.consecutiveLossThreshold &&

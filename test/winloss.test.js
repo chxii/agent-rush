@@ -29,6 +29,22 @@ test('failure uses configured loss streak and strict profit boundary', () => {
   assert.equal(state({ consecutiveLoss: 3, cumulativeProfit: -2.1 }).checkFailure(TEST_CONFIG), true)
 })
 
+test('applyRoundResult only clears loss streak on positive profit', () => {
+  const gameState = state({ cumulativeProfit: -1, consecutiveLoss: 2 })
+
+  gameState.applyRoundResult(0)
+  assert.equal(gameState.cumulativeProfit, -1)
+  assert.equal(gameState.consecutiveLoss, 2)
+
+  gameState.applyRoundResult(0.25)
+  assert.equal(gameState.cumulativeProfit, -0.75)
+  assert.equal(gameState.consecutiveLoss, 0)
+
+  gameState.applyRoundResult(-0.1)
+  assert.equal(gameState.cumulativeProfit, -0.85)
+  assert.equal(gameState.consecutiveLoss, 1)
+})
+
 test('calculateWinLossProgress returns victory and failure distances from config', () => {
   const progress = calculateWinLossProgress(
     {
