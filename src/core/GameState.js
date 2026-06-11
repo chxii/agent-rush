@@ -3,7 +3,7 @@ import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 import { getBaseGasPoolForLayer, getRoleBuffs, isValidRole, nextRoleLevel } from './RoleBuffs.js'
 
 const STORAGE_KEY = 'agent_rush_v1'
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 const LEGACY_UNLOCKED_KEY = `unlocked${'Agents'}`
 const LEGACY_LEVELS_KEY = `agent${'Levels'}`
 const LEGACY_ACTIVE_KEY = `active${'Agents'}`
@@ -21,6 +21,7 @@ const DEFAULT_STATE = {
   // Reserved for a future enemy-learning mock. B3 has no runtime read/write logic for it.
   genesisHistory: { lastTwoRounds: [], boostedType: null },
   tutorialSeen: false,
+  displayId: 'operator',
 }
 
 export const GameState = {
@@ -34,6 +35,7 @@ export const GameState = {
     const progress = this.loadProgress()
     if (progress) {
       this.tutorialSeen = progress.tutorialSeen
+      this.displayId = progress.displayId
     }
 
     this.gasPoolMax = this.gasPoolMaxForStage(this.currentLayer)
@@ -51,6 +53,7 @@ export const GameState = {
       JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
         tutorialSeen: this.tutorialSeen,
+        displayId: this.displayId,
       }),
     )
   },
@@ -66,6 +69,7 @@ export const GameState = {
 
       return {
         tutorialSeen: parsed.tutorialSeen === true,
+        displayId: sanitizeDisplayId(parsed.displayId),
       }
     } catch (error) {
       console.warn('[GameState] Failed to load progress', error)
@@ -126,6 +130,12 @@ export const GameState = {
     this.tutorialSeen = true
     this.saveProgress()
   },
+
+  setDisplayId(displayId) {
+    this.displayId = sanitizeDisplayId(displayId)
+    this.saveProgress()
+    return this.displayId
+  },
 }
 
 function resetState(target) {
@@ -139,4 +149,12 @@ function clone(value) {
 
 function roundEth(value) {
   return Math.round(value * 1000) / 1000
+}
+
+function sanitizeDisplayId(value) {
+  const cleaned = String(value ?? 'operator')
+    .trim()
+    .replace(/[^\w-]/g, '')
+    .slice(0, 16)
+  return cleaned || 'operator'
 }

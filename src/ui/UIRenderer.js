@@ -17,6 +17,7 @@ const elements = {
   header: null,
   roleStrip: null,
   handArea: null,
+  thoughtArea: null,
   logPanel: null,
   playButton: null,
   skipButton: null,
@@ -37,6 +38,7 @@ export const UIRenderer = {
     elements.header = document.querySelector('#header')
     elements.roleStrip = document.querySelector('#rolestrip')
     elements.handArea = document.querySelector('#hand-area')
+    elements.thoughtArea = document.querySelector('#thought-area')
     elements.logPanel = document.querySelector('#log-panel')
     elements.playButton = document.querySelector('#play-button')
     elements.skipButton = document.querySelector('#skip-button')
@@ -185,6 +187,7 @@ export const UIRenderer = {
     const constraints = options.constraints ?? null
     const isPlayable = phase === 'play'
 
+    elements.handArea.hidden = false
     elements.handArea.innerHTML = cards
       .map((card) => {
         const typeMeta = typeMetaFor(card.type)
@@ -271,6 +274,11 @@ export const UIRenderer = {
     if (!pipelineState.length) {
       const existing = elements.handArea.querySelector('[data-execution-workbench]')
       if (existing) existing.remove()
+      if (elements.thoughtArea) {
+        elements.thoughtArea.hidden = true
+        elements.thoughtArea.innerHTML = ''
+      }
+      elements.handArea.hidden = false
       return
     }
 
@@ -281,6 +289,7 @@ export const UIRenderer = {
       ]),
     )
 
+    elements.handArea.hidden = false
     elements.handArea.innerHTML = `
       <section class="execution-workbench" data-execution-workbench>
         <div class="pipeline-bar" aria-label="执行顺序">
@@ -291,6 +300,8 @@ export const UIRenderer = {
         </div>
       </section>
     `
+
+    if (elements.thoughtArea) elements.thoughtArea.hidden = false
 
     animatePipelineMove(previousPositions)
   },

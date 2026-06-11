@@ -49,9 +49,12 @@ export const RoundEngine = {
     this.interventionState = createInterventionState()
     this.roundResult = null
     this._interventionOpen = false
-    this._roundSeenBots.clear()
     UIRenderer.renderPipeline([])
     this.transition('scan')
+  },
+
+  resetRunIntroState() {
+    this._roundSeenBots.clear()
   },
 
   transition(newPhase) {

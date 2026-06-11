@@ -12,6 +12,7 @@ export const ProgressionEngine = {
   },
 
   startRun(gameState) {
+    roundStarter?.resetRunIntroState?.()
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = Math.min(gameState.gasPool || gameState.gasPoolMax, gameState.gasPoolMax)
 
@@ -41,7 +42,12 @@ export const ProgressionEngine = {
 
     const completedLayer = gameState.currentLayer
     if (isBossLayer(completedLayer)) {
+      const previousLevel = gameState.roleLevel
       const nextLevel = gameState.upgradeRole()
+      if (nextLevel === previousLevel) {
+        this.advanceAfterReward(gameState, completedLayer)
+        return
+      }
       OverlayManager.showBossReward(gameState.role, nextLevel, () => {
         this.advanceAfterReward(gameState, completedLayer)
       })

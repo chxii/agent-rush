@@ -1,6 +1,7 @@
 import { SCENES } from '../config/scenes.js'
 import { AGENT_GUIDE, BOT_GUIDE, RULES_PAGES } from '../config/guideContent.js'
 import { ROLE_CONFIG } from '../config/roles.js'
+import { ThoughtChainPanel } from './ThoughtChainPanel.js'
 
 export const OverlayManager = {
   showStartMenu(gameState, onStart) {
@@ -9,6 +10,10 @@ export const OverlayManager = {
       `
         <div class="start-menu">
           <p class="overlay-copy">你是一支 MEV 团队的指挥官。你制定战略：挑机会、分资源、定预案、临场改价；你的 AI Executor Agent 自主地、长程地把战略执行下去：它拆解任务、真实调用链上工具、观察结果，在被对手抢占或你改令时迭代修复，最终向你交付这一轮的战果。</p>
+          <label class="display-id-field">
+            <span class="label">显示用 ID</span>
+            <input id="display-id-input" type="text" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" value="${escapeHtml(gameState.displayId ?? 'operator')}" placeholder="operator">
+          </label>
           <div class="start-actions">
             <button id="start-game" class="primary-button" type="button">开始游戏</button>
             <button id="start-codex" class="secondary-button" type="button">游戏规则与图鉴</button>
@@ -18,6 +23,7 @@ export const OverlayManager = {
     )
 
     panel.querySelector('#start-game').addEventListener('click', () => {
+      ThoughtChainPanel.setDisplayId(gameState.setDisplayId(panel.querySelector('#display-id-input')?.value))
       this.hideAll()
       onStart()
     })
@@ -147,8 +153,7 @@ export const OverlayManager = {
     const panel = showOverlay(
       'Boss 奖励',
       `
-        <p class="overlay-copy">${role?.name ?? '角色'} 已强化到 Lv.${roleLevel}。</p>
-        <p class="overlay-copy">${role?.buffSummary ?? '当前角色 buff 已强化。'}</p>
+        <p class="overlay-copy">${formatRoleUpgrade(role, roleLevel)}</p>
         <button id="boss-reward-confirm" class="primary-button" type="button">继续</button>
       `,
     )
@@ -192,11 +197,11 @@ export const OverlayManager = {
 
   showGameOver(stats, onRestart) {
     const panel = showOverlay(
-      '游戏结束',
+      '出局 💀',
       `
-        <p class="overlay-copy">连续亏损压力已经触发失败线。重新开始后可以再次选择起始角色。</p>
+        <p class="overlay-copy">连亏压力顶到了头——<strong>连续亏损踩线、同时累计收益也跌破了失败线</strong>，两条线一起亮红，这局到此为止。别灰心，换个角色、换套打法，缝还在那儿。</p>
         ${formatFinalStats(stats)}
-        <button id="restart-game" class="primary-button" type="button">重新开始</button>
+        <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
@@ -204,11 +209,11 @@ export const OverlayManager = {
 
   showVictory(stats, onRestart) {
     const panel = showOverlay(
-      '胜利',
+      '收网成功 🏆',
       `
-        <p class="overlay-copy">已打通第 20 层，累计收益 ${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH。</p>
+        <p class="overlay-copy">你带着 Executor 一路杀穿 20 层，从 Bot-404 摸到 Genesis，累计净赚 <strong>${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH</strong>，稳稳站上了胜利线。这条链上的缝，被你薅明白了。</p>
         ${formatFinalStats(stats)}
-        <button id="restart-game" class="primary-button" type="button">重新开始</button>
+        <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
@@ -342,4 +347,36 @@ function formatFinalStats(stats = {}) {
 function formatSignedEth(value) {
   const number = Number(value) || 0
   return `${number >= 0 ? '+' : ''}${number.toFixed(3)} ETH`
+}
+
+function formatRoleUpgrade(role, roleLevel) {
+  if (!role) return `角色已强化到 Lv.${roleLevel}。`
+
+  const level = role.levels?.[roleLevel] ?? {}
+  if (role.id === 'scout') {
+    return `${role.name} 升到 Lv.${roleLevel}：每轮现在多发 <strong>${level.scanCardBonus ?? 1}</strong> 张机会牌。`
+  }
+
+  if (role.id === 'resist') {
+    const steal = Math.round((level.stealProbabilityMultiplier ?? 1) * 100)
+    const bid = Math.round((level.replaceRequiredBidMultiplier ?? 1) * 100)
+    const bonus = Math.round((level.replaceSuppressProbabilityBonus ?? 0) * 100)
+    return `${role.name} 升到 Lv.${roleLevel}：被抢概率降到约 <strong>${steal}%</strong>，反抢出价约 <strong>${bid}%</strong>，成功率额外 +<strong>${bonus}%</strong>。`
+  }
+
+  if (role.id === 'efficiency') {
+    const bonus = Math.round(((level.gasPoolMultiplier ?? 1) - 1) * 100)
+    return `${role.name} 升到 Lv.${roleLevel}：Gas Pool 上限 +<strong>${bonus}%</strong>。`
+  }
+
+  return `${role.name} 已强化到 Lv.${roleLevel}。${role.buffSummary ?? ''}`
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

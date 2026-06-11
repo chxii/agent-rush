@@ -27,6 +27,7 @@
       <section class="main-grid">
         <section class="play-surface">
           <div id="hand-area" class="hand-area"></div>
+          <section id="thought-area" class="thought-area" aria-live="polite" hidden></section>
         </section>
 
         <aside id="log-panel" class="log-panel" aria-live="polite"></aside>
@@ -57,12 +58,16 @@
       import { ProgressionEngine } from './src/game/ProgressionEngine.js'
       import { UIRenderer } from './src/ui/UIRenderer.js'
       import { OverlayManager } from './src/ui/OverlayManager.js'
+      import { ThoughtChainPanel } from './src/ui/ThoughtChainPanel.js'
       import { ExecutorAI } from './src/ai/ExecutorAI.js'
 
       UIRenderer.init()
       ExecutorAI.init()
       GameState.init({ storage: createBrowserStorage(window.localStorage) })
-      ProgressionEngine.setRoundStarter((gameState) => RoundEngine.startRound(gameState))
+      ThoughtChainPanel.setDisplayId(GameState.displayId)
+      const startRound = (gameState) => RoundEngine.startRound(gameState)
+      startRound.resetRunIntroState = () => RoundEngine.resetRunIntroState()
+      ProgressionEngine.setRoundStarter(startRound)
 
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
       UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
