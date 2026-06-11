@@ -9,9 +9,10 @@
   --text: #eaf7f0;
   --muted: #8ea39a;
   --accent: #2bd98a;
-  --accent-strong: #23b978;
-  --warn: #f6c35b;
-  --danger: #ff5d8f;
+  --accent-strong: #178f5b;
+  --green-glow: #39ffa0;
+  --warn: #ffc14d;
+  --danger: #ff5d5d;
   --blue: #4aa8ff;
   --arbitrage: #2bd9c0;
   --sandwich: #4aa8ff;
@@ -32,13 +33,15 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
+    radial-gradient(1200px 500px at 70% -10%, rgba(43, 217, 138, 0.08), transparent 60%),
     linear-gradient(180deg, rgba(43, 217, 138, 0.13), transparent 32%),
     linear-gradient(90deg, rgba(43, 217, 138, 0.055) 1px, transparent 1px),
     linear-gradient(180deg, rgba(43, 217, 138, 0.045) 1px, transparent 1px),
     var(--bg);
-  background-size: auto, 42px 42px, 42px 42px, auto;
+  background-size: auto, auto, 26px 26px, 26px 26px, auto;
   color: var(--text);
   font-family: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
 }
 
 body::before {
@@ -47,8 +50,8 @@ body::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 4px);
-  opacity: 0.28;
+  background: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+  opacity: 1;
 }
 
 button,
@@ -103,8 +106,11 @@ textarea:focus-visible {
   height: 12px;
   left: -1px;
   top: -1px;
-  border-left: 2px solid var(--accent);
-  border-top: 2px solid var(--accent);
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid var(--accent);
+  border-top: 1px solid var(--accent);
+  opacity: 0.55;
   pointer-events: none;
 }
 
@@ -117,12 +123,13 @@ textarea:focus-visible {
 .settlement-dialog::after {
   content: "";
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   right: -1px;
   bottom: -1px;
-  border-right: 2px solid rgba(43, 217, 138, 0.68);
-  border-bottom: 2px solid rgba(43, 217, 138, 0.68);
+  border-right: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  opacity: 0.55;
   pointer-events: none;
 }
 
@@ -139,9 +146,9 @@ textarea:focus-visible {
 .label {
   margin: 0 0 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: 2px;
 }
 
 h1,
@@ -153,8 +160,9 @@ h3 {
 
 h1 {
   color: var(--accent);
-  font-size: clamp(30px, 5.4vw, 58px);
-  line-height: 0.98;
+  font-size: clamp(20px, 2.4vw, 24px);
+  font-weight: 800;
+  line-height: 1.1;
   text-shadow: 0 0 26px rgba(43, 217, 138, 0.34);
 }
 
@@ -260,6 +268,8 @@ h3 {
 
 .play-surface {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
 }
 
 .hand-area {
@@ -279,7 +289,7 @@ h3 {
   text-align: left;
   color: var(--text);
   border: 1px solid var(--line);
-  border-left: 4px solid var(--type-color, var(--accent));
+  border-left: 3px solid var(--type-color, var(--accent));
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent), #0c1114;
   cursor: pointer;
   transition: border-color 160ms ease, transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
@@ -297,11 +307,23 @@ h3 {
 .card:hover,
 .card.selected {
   border-color: var(--type-color, var(--accent));
-  box-shadow: 0 0 18px rgba(43, 217, 138, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(43, 217, 138, 0.3), 0 0 26px -6px rgba(43, 217, 138, 0.5);
 }
 
 .card.selected {
   transform: translateY(-4px);
+}
+
+.card.selected::after {
+  content: "● SELECTED";
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  color: #04140d;
+  background: var(--accent);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .card.entering {
@@ -322,7 +344,7 @@ h3 {
 .card-type,
 .rule-type {
   color: var(--type-color, var(--accent));
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .profit-value {
@@ -398,6 +420,19 @@ h3 {
   display: grid;
   gap: 14px;
   min-height: 0;
+}
+
+.thought-area {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  scrollbar-gutter: stable;
+}
+
+.thought-area[hidden] {
+  display: none;
 }
 
 .pipeline-bar {
@@ -534,6 +569,12 @@ h3 {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.terminal-prefix {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .thought-card {
@@ -866,7 +907,7 @@ h3 {
 }
 
 .primary-button {
-  background: var(--accent-strong);
+  background: var(--accent);
   color: #03100b;
 }
 
@@ -878,7 +919,7 @@ h3 {
 
 .secondary-button {
   border-color: var(--line-strong);
-  background: rgba(7, 9, 11, 0.38);
+  background: transparent;
 }
 
 .secondary-button:hover:not(:disabled) {
@@ -916,13 +957,16 @@ h3 {
 .settlement-dialog,
 .overlay-dialog {
   width: min(660px, 100%);
+  max-width: calc(100vw - 40px);
   max-height: min(740px, calc(100vh - 40px));
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px;
 }
 
 .codex-dialog {
   width: min(860px, 100%);
+  max-width: calc(100vw - 40px);
 }
 
 .start-menu {
@@ -980,6 +1024,22 @@ h3 {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.6;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.display-id-field {
+  display: grid;
+  gap: 6px;
+}
+
+.display-id-field input {
+  width: min(260px, 100%);
+  min-height: 38px;
+  border: 1px solid var(--line);
+  background: #070b0d;
+  color: var(--text);
+  padding: 7px 9px;
 }
 
 .scene-dex_arb { border-left: 4px solid var(--arbitrage); }
@@ -1037,6 +1097,8 @@ h3 {
 .guide-section {
   display: grid;
   gap: 12px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .guide-section {
@@ -1047,6 +1109,8 @@ h3 {
 .guide-entry {
   display: grid;
   gap: 10px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .guide-entry p {
@@ -1063,6 +1127,20 @@ h3 {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.55;
+}
+
+.guide-note {
+  display: block;
+  border-left: 3px solid var(--line-strong);
+  padding-left: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+code {
+  color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
 .bot-intro {
