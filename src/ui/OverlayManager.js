@@ -4,27 +4,14 @@ import { ROLE_CONFIG } from '../config/roles.js'
 
 export const OverlayManager = {
   showStartMenu(gameState, onStart) {
-    const role = ROLE_CONFIG.roles[gameState.role]
-    const seenBotCount = gameState.seenBots.length
-
     const panel = showOverlay(
       'Agent Rush',
       `
         <div class="start-menu">
-          <p class="overlay-copy">在链上机会中看牌、分配 Gas、设定预案，并让 Executor 运行半闭环执行。</p>
-          <div class="start-progress">
-            <div>
-              <strong>当前角色</strong>
-              <div class="start-chip-list"><span>${role ? `${role.name} Lv.${gameState.roleLevel}` : '开局选择'}</span></div>
-            </div>
-            <div>
-              <strong>已遭遇对手</strong>
-              <span>${seenBotCount} / ${Object.keys(BOT_GUIDE).length}</span>
-            </div>
-          </div>
+          <p class="overlay-copy">你是一支 MEV 团队的指挥官。你制定战略：挑机会、分资源、定预案、临场改价；你的 AI Executor Agent 自主地、长程地把战略执行下去：它拆解任务、真实调用链上工具、观察结果，在被对手抢占或你改令时迭代修复，最终向你交付这一轮的战果。</p>
           <div class="start-actions">
             <button id="start-game" class="primary-button" type="button">开始游戏</button>
-            <button id="start-codex" class="secondary-button" type="button">图鉴</button>
+            <button id="start-codex" class="secondary-button" type="button">游戏规则与图鉴</button>
           </div>
         </div>
       `,
@@ -49,7 +36,7 @@ export const OverlayManager = {
         `
           <div class="guide-copy">${formatParagraphs(page.body)}</div>
           <div class="guide-pager">
-            <button id="welcome-skip" class="secondary-button" type="button">跳过</button>
+            <button id="welcome-skip" class="secondary-button" type="button">关闭</button>
             <span>${pageIndex + 1} / ${RULES_PAGES.length}</span>
             <div class="guide-pager-actions">
               <button id="welcome-prev" class="secondary-button" type="button" ${pageIndex === 0 ? 'disabled' : ''}>上一页</button>
@@ -103,11 +90,14 @@ export const OverlayManager = {
   },
 
   showSceneSelect(availableScenes, onSelect) {
+    const intro = `
+      <p class="overlay-copy">不同的“猎场”机会不一样：有的稳、骗局少；有的野、骗局多但大牌也多。还要留意每个场景常驻的对手是谁。挑一个你这一层想下的赌注。</p>
+    `
     const body = availableScenes
       .map((sceneId) => {
         const scene = SCENES[sceneId]
         return `
-          <button class="choice-card" data-scene-id="${sceneId}" type="button">
+          <button class="choice-card scene-${sceneId}" data-scene-id="${sceneId}" type="button">
             <strong>${scene.name}</strong>
             <span>${scene.styleHint}</span>
             <span>骗局率 ${(scene.scamRate * 100).toFixed(0)}%</span>
@@ -117,7 +107,7 @@ export const OverlayManager = {
       })
       .join('')
 
-    const panel = showOverlay('选择场景', `<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择场景', `${intro}<div class="choice-grid">${body}</div>`)
     panel.querySelectorAll('[data-scene-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -127,6 +117,9 @@ export const OverlayManager = {
   },
 
   showRoleSelect(roles, onSelect) {
+    const intro = `
+      <p class="overlay-copy">先定一个打法：多看牌的信息流、扛得住抢的硬派，或家底厚的资源派。整局都会跟着你，选一个合你胃口的开打。</p>
+    `
     const body = Object.values(roles)
       .map(
         (role) => `
@@ -140,7 +133,7 @@ export const OverlayManager = {
       )
       .join('')
 
-    const panel = showOverlay('选择起始角色', `<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择起始角色', `${intro}<div class="choice-grid">${body}</div>`)
     panel.querySelectorAll('[data-role-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -170,7 +163,7 @@ export const OverlayManager = {
 
     const render = () => {
       const panel = showCodexOverlay(
-        '图鉴',
+        '游戏规则与图鉴',
         `
           <div class="guide-tabs">
             <button data-guide-tab="rules" class="${activeTab === 'rules' ? 'active' : ''}" type="button">规则</button>
@@ -201,7 +194,7 @@ export const OverlayManager = {
     const panel = showOverlay(
       '游戏结束',
       `
-        <p class="overlay-copy">连亏压力已经触发失败线。重新开始后可以再次选择起始角色。</p>
+        <p class="overlay-copy">连续亏损压力已经触发失败线。重新开始后可以再次选择起始角色。</p>
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">重新开始</button>
       `,
@@ -339,7 +332,7 @@ function formatFinalStats(stats = {}) {
         <span>${formatSignedEth(stats.cumulativeProfit)}</span>
       </div>
       <div>
-        <strong>连亏次数</strong>
+        <strong>连续亏损</strong>
         <span>${Math.max(0, Math.round(Number(stats.consecutiveLoss) || 0))}</span>
       </div>
     </div>

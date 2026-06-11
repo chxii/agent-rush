@@ -41,7 +41,8 @@ export const ExecutionEngine = {
       },
       {
         decider,
-        rng: options.rng ?? createRandomSource(),
+        rng: options.rng ?? createRandomSource(options.seed),
+        seed: options.seed,
         maxReplans: options.maxReplans,
         config: options.config ?? SEMI_LOOP_CONFIG,
         toolConfig: options.toolConfig,
@@ -51,6 +52,7 @@ export const ExecutionEngine = {
         hooks: createUiHooks({
           gameState,
           onExecutionComplete: options.onExecutionComplete,
+          pipeline: options.pipeline,
         }),
       },
     )
@@ -60,6 +62,7 @@ export const ExecutionEngine = {
 function createUiHooks(options = {}) {
   return {
     onCardStart({ card }) {
+      options.pipeline?.start?.(card)
       ThoughtChainPanel.startCard(card)
     },
 
@@ -70,6 +73,7 @@ function createUiHooks(options = {}) {
       }
 
       if (!card) return
+      options.pipeline?.update?.(card)
       ThoughtChainPanel.appendCardEvent(card.id, {
         kind: 'tool',
         title: action,
@@ -79,18 +83,20 @@ function createUiHooks(options = {}) {
     },
 
     onIncident({ card, snapshot }) {
+      options.pipeline?.incident?.(card, snapshot)
       ThoughtChainPanel.appendCardEvent(card.id, {
-        kind: 'bot',
+        kind: 'incident',
         title: incidentTitle(snapshot.trigger.type),
-        detail: snapshot.trigger.message,
+        detail: incidentDetail(snapshot),
       })
     },
 
-    onDecision({ card, decision }) {
+    onDecision({ card, snapshot, decision }) {
+      options.pipeline?.decision?.(card, decision)
       ThoughtChainPanel.appendCardEvent(card.id, {
         kind: decision.fallback ? 'system' : 'repair',
         title: decision.fallback ? '规则保底' : 'Executor 重规划',
-        detail: decision.reasoning,
+        detail: replanDetail(snapshot, decision),
       })
     },
 
@@ -103,6 +109,7 @@ function createUiHooks(options = {}) {
       })
     },
     onExecutionComplete(payload) {
+      options.pipeline?.complete?.(payload?.result)
       options.onExecutionComplete?.(payload)
     },
   }
@@ -121,6 +128,37 @@ function incidentTitle(type) {
     target_invalid: '目标失效',
   }
   return titles[type] ?? type
+}
+
+function incidentDetail(snapshot = {}) {
+  const trigger = snapshot.trigger ?? {}
+  if (trigger.type === 'TARGET_STOLEN') {
+    const bidder = trigger.rawResult?.competitor ?? '对手 Bot'
+    const bid = trigger.competitorGasBid ? `${trigger.competitorGasBid} Gwei` : '更高 Gas'
+    return `${bidder} 抢先打包了目标，出价 ${bid}。你的预案：${contingencyLabel(snapshot.playerContingency)}。${trigger.message ?? ''}`
+  }
+
+  if (trigger.type === 'PLAYER_INTERVENTION') {
+    return `玩家指令：${snapshot.playerInstruction ?? '调整执行策略'}。Executor 将按现场状态重规划。`
+  }
+
+  return trigger.message ?? trigger.type ?? '现场状态发生变化。'
+}
+
+function replanDetail(snapshot = {}, decision = {}) {
+  const target = decision.targetCardId ? `转向 ${decision.targetCardId}` : `处理 ${snapshot.affectedCardId ?? '当前机会'}`
+  const action = decision.action ? `动作 ${decision.action}` : '调整执行顺序'
+  const reason = decision.reasoning ?? '根据现场状态更新执行计划。'
+  return `→ 重规划：${target}，${action}。${reason}`
+}
+
+function contingencyLabel(value) {
+  const labels = {
+    fight: '硬刚',
+    abandon: '放弃',
+    transfer: '转移',
+  }
+  return labels[value] ?? value ?? '未设置'
 }
 
 function fallbackReason(reason) {

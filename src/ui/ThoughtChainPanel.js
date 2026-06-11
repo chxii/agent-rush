@@ -1,4 +1,5 @@
 const cardSections = new Map()
+const cardMeta = new Map()
 
 export const ThoughtChainPanel = {
   appendLog(entry) {
@@ -55,6 +56,7 @@ export const ThoughtChainPanel = {
   },
 
   startCard(card) {
+    cardMeta.set(card.id, card)
     getCardBody(card.id, cardLabel(card))
   },
 
@@ -65,6 +67,9 @@ export const ThoughtChainPanel = {
 
     const row = document.createElement('div')
     row.className = `thought-event event-${event.kind ?? 'system'}`
+    if (event.kind === 'bot' || event.kind === 'incident') row.classList.add('is-steal')
+    if (event.kind === 'repair') row.classList.add('is-replan')
+
     row.innerHTML = `
       <span class="event-icon">${iconForKind(event.kind)}</span>
       <div>
@@ -88,6 +93,7 @@ export const ThoughtChainPanel = {
     const panel = document.querySelector('#log-panel')
     if (panel) panel.innerHTML = ''
     cardSections.clear()
+    cardMeta.clear()
   },
 }
 
@@ -103,12 +109,16 @@ function getCardBody(cardId, title = cardId) {
     return existingBody
   }
 
+  const meta = cardMeta.get(cardId)
   const section = document.createElement('section')
-  section.className = 'thought-card is-active'
+  section.className = `thought-card is-active ${meta ? `type-${meta.type.replaceAll('_', '-')}` : ''}`
   section.dataset.cardId = cardId
   section.innerHTML = `
     <div class="thought-card-header">
-      <strong>${title}</strong>
+      <div>
+        <span class="now-badge">TRACE</span>
+        <strong>${title}</strong>
+      </div>
       <span>${cardId}</span>
     </div>
     <div class="thought-card-body"></div>
@@ -141,13 +151,13 @@ function formatEntry(entry) {
 }
 
 function cardLabel(card) {
-  return `${typeLabel(card.type)} · ${formatEth(card.expectedProfit)}`
+  return `${typeLabel(card.type)} · ${formatEth(card.expectedProfit)} · Gas ${card.allocatedGas ?? card.gasCost}`
 }
 
 function typeLabel(type) {
   const labels = {
     arbitrage: '套利',
-    sandwich: '夹子',
+    sandwich: '夹击',
     nft_snipe: 'NFT 抢购',
     front_run: '抢跑',
     liquidation: '清算',
@@ -161,7 +171,9 @@ function iconForKind(kind) {
     plan: '1',
     tool: '2',
     bot: '!',
-    repair: '+',
+    incident: '!',
+    repair: '↻',
+    fallback: 'R',
     success: 'OK',
     failure: 'X',
     system: 'i',

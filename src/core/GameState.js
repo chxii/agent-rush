@@ -3,7 +3,7 @@ import { WIN_LOSS_CONFIG } from '../config/winloss.js'
 import { getBaseGasPoolForLayer, getRoleBuffs, isValidRole, nextRoleLevel } from './RoleBuffs.js'
 
 const STORAGE_KEY = 'agent_rush_v1'
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 const LEGACY_UNLOCKED_KEY = `unlocked${'Agents'}`
 const LEGACY_LEVELS_KEY = `agent${'Levels'}`
 const LEGACY_ACTIVE_KEY = `active${'Agents'}`
@@ -21,7 +21,6 @@ const DEFAULT_STATE = {
   // Reserved for a future enemy-learning mock. B3 has no runtime read/write logic for it.
   genesisHistory: { lastTwoRounds: [], boostedType: null },
   tutorialSeen: false,
-  seenBots: [],
 }
 
 export const GameState = {
@@ -35,7 +34,6 @@ export const GameState = {
     const progress = this.loadProgress()
     if (progress) {
       this.tutorialSeen = progress.tutorialSeen
-      this.seenBots = progress.seenBots
     }
 
     this.gasPoolMax = this.gasPoolMaxForStage(this.currentLayer)
@@ -53,7 +51,6 @@ export const GameState = {
       JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
         tutorialSeen: this.tutorialSeen,
-        seenBots: this.seenBots,
       }),
     )
   },
@@ -69,7 +66,6 @@ export const GameState = {
 
       return {
         tutorialSeen: parsed.tutorialSeen === true,
-        seenBots: Array.isArray(parsed.seenBots) ? parsed.seenBots : [],
       }
     } catch (error) {
       console.warn('[GameState] Failed to load progress', error)
@@ -129,17 +125,6 @@ export const GameState = {
   markTutorialSeen() {
     this.tutorialSeen = true
     this.saveProgress()
-  },
-
-  hasSeenBot(botName) {
-    return this.seenBots.includes(botName)
-  },
-
-  markBotSeen(botName) {
-    if (!this.seenBots.includes(botName)) {
-      this.seenBots.push(botName)
-      this.saveProgress()
-    }
   },
 }
 

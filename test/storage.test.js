@@ -34,16 +34,17 @@ test('GameState resets old agent roster saves instead of migrating them', () => 
   assert.equal(GameState.role, null)
   assert.equal(GameState.roleLevel, 1)
   assert.equal(GameState.tutorialSeen, false)
-  assert.equal(GameState.hasSeenBot('Phantom'), false)
+  assert.equal('seenBots' in GameState, false)
+  assert.equal('hasSeenBot' in GameState, false)
+  assert.equal('markBotSeen' in GameState, false)
 })
 
-test('GameState starts a new run while preserving cross-run guide progress', () => {
+test('GameState starts a new run while preserving tutorial guide progress only', () => {
   const storage = createMemoryStorage()
   GameState.init({ storage })
   GameState.setRole(ROLE_IDS.RESIST)
   GameState.roleLevel = 2
   GameState.markTutorialSeen()
-  GameState.markBotSeen('Phantom')
   GameState.saveProgress()
 
   GameState.init({ storage })
@@ -53,7 +54,7 @@ test('GameState starts a new run while preserving cross-run guide progress', () 
   assert.equal(GameState.currentLayer, 1)
   assert.equal(GameState.cumulativeProfit, 0)
   assert.equal(GameState.tutorialSeen, true)
-  assert.equal(GameState.hasSeenBot('Phantom'), true)
+  assert.equal('seenBots' in GameState, false)
 })
 
 test('GameState role upgrades cap at configured max level', () => {

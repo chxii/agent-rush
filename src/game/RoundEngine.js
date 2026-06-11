@@ -15,6 +15,7 @@ import { ProgressionEngine } from './ProgressionEngine.js'
 const DEFAULT_PLAY_MS = 25000
 const REVEAL_INTERVAL_MS = 900
 const SCAN_BUFFER_MS = 900
+const DEMO_SEED = 'agent-rush-c3-demo'
 
 export const RoundEngine = {
   gameState: null,
@@ -34,6 +35,8 @@ export const RoundEngine = {
   _timerDone: null,
   _paused: false,
   _interventionOpen: false,
+  _roundSeenBots: new Set(),
+  _demoSeed: readSeedFromUrl(),
 
   startRound(gameState, roundConfig = {}) {
     this.gameState = gameState
@@ -46,6 +49,8 @@ export const RoundEngine = {
     this.interventionState = createInterventionState()
     this.roundResult = null
     this._interventionOpen = false
+    this._roundSeenBots.clear()
+    UIRenderer.renderPipeline([])
     this.transition('scan')
   },
 
@@ -58,6 +63,7 @@ export const RoundEngine = {
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
     if (newPhase !== 'play') UIRenderer.setSelectionStatus(null)
+    if (newPhase !== 'execute') UIRenderer.renderPipeline([])
     UIRenderer.renderHeader(this.gameState)
 
     if (newPhase === 'scan') this.startScan()
@@ -75,9 +81,9 @@ export const RoundEngine = {
     UIRenderer.setTimerText('扫描中')
 
     const activeBotType = EnemyBotAI.getActiveBot(this.gameState.currentLayer)
-    if (activeBotType && !this.gameState.hasSeenBot(activeBotType)) {
+    if (activeBotType && !this._roundSeenBots.has(activeBotType)) {
       OverlayManager.showBotIntro(activeBotType, () => {
-        this.gameState.markBotSeen(activeBotType)
+        this._roundSeenBots.add(activeBotType)
         this.runScan(activeBotType)
       })
       return
@@ -91,6 +97,7 @@ export const RoundEngine = {
       this.gameState.currentScene,
       this.gameState.role,
       this.gameState.roleLevel,
+      { seed: this._demoSeed },
     )
 
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
@@ -137,6 +144,10 @@ export const RoundEngine = {
     UIRenderer.setSelectionStatus(null)
     UIRenderer.setTimerText('执行中')
     UIRenderer.setExecutionMode('semi-loop')
+    UIRenderer.initPipeline(selectedCards, {
+      gasAllocations: battlePlan.gasAllocations,
+      contingencies: battlePlan.contingencies,
+    })
     this._interventionOpen = true
     this.renderInterventionState('本回合可干预一次。')
 
@@ -144,6 +155,25 @@ export const RoundEngine = {
       this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
         interventionState: this.interventionState,
         forceSteal: () => EnemyBotAI.consumeForcedSteal(),
+        seed: this._demoSeed,
+        pipeline: {
+          init: (cards) => UIRenderer.initPipeline(cards, {
+            gasAllocations: battlePlan.gasAllocations,
+            contingencies: battlePlan.contingencies,
+          }),
+          start: (card) => UIRenderer.updatePipelineCard(card.id, { status: 'running' }),
+          update: (card) => UIRenderer.updatePipelineCard(card.id, {
+            status: card.status,
+            gasUsed: card.gasUsed,
+            actualProfit: card.actualProfit,
+          }),
+          incident: (card) => UIRenderer.updatePipelineCard(card.id, { status: 'incident' }),
+          decision: (card, decision) => {
+            UIRenderer.reorderPipeline(decision?.updatedExecutionOrder)
+            UIRenderer.updatePipelineCard(card.id, { status: card.status || 'running' })
+          },
+          complete: (result) => UIRenderer.completePipeline(result?.cards ?? []),
+        },
         onExecutionComplete: () => {
           this._interventionOpen = false
           UIRenderer.setInterventionState(null)
@@ -410,6 +440,16 @@ export const RoundEngine = {
     })
   },
 
+  toggleDemoSeed() {
+    this._demoSeed = this._demoSeed ? null : DEMO_SEED
+    ThoughtChainPanel.appendLog({
+      timestampMs: Date.now(),
+      source: 'system',
+      text: this._demoSeed ? `[Debug] 固定随机种子已启用：${this._demoSeed}` : '[Debug] 固定随机种子已关闭',
+      isStreaming: false,
+    })
+  },
+
   startPhaseTimer(durationMs, onDone, label = null) {
     this.clearPhaseTimer()
     this._timerDone = onDone
@@ -450,6 +490,12 @@ export const RoundEngine = {
     this._timerDone = null
     this._paused = false
   },
+}
+
+function readSeedFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get('seed') || null
 }
 
 function buildEmergencyResult(cards, error) {
