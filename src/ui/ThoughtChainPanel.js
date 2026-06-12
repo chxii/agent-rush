@@ -41,6 +41,7 @@ export const ThoughtChainPanel = {
     const line = document.createElement('div')
     const span = document.createElement('span')
     let done = false
+    let attached = false
 
     line.className = 'log-line log-executor streaming'
     if (options.cardId) {
@@ -51,22 +52,27 @@ export const ThoughtChainPanel = {
     line.append(span)
 
     const parent = options.cardId ? getCardBody(options.cardId, options.cardTitle) : panel
-    if (parent) {
+    const attachLine = () => {
+      if (!parent || attached) return
       parent.append(line)
+      attached = true
       scrollToBottom(panel)
     }
+    if (options.cardId || prefix) attachLine()
 
     if (onStart) onStart(span)
 
     return {
       write(chunk) {
         if (done) return
+        if (!attached && chunk) attachLine()
         span.textContent += chunk
         scrollToBottom(panel)
       },
 
       end() {
         done = true
+        if (!attached && span.textContent) attachLine()
         line.classList.remove('streaming')
         scrollToBottom(panel)
       },
