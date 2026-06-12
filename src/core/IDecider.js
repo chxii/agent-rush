@@ -3,6 +3,8 @@ export const INCIDENT_TYPES = {
   GAS_INSUFFICIENT: 'gas_insufficient',
   PLAYER_INTERVENTION: 'player_intervention',
   TARGET_INVALID: 'target_invalid',
+  TX_FAILED: 'tx_failed',
+  WINDOW_EXPIRED: 'window_expired',
 }
 
 export const DECIDER_ACTIONS = {

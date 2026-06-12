@@ -14,7 +14,7 @@ export const RULES_PAGES = [
       '把区块链想成一本<strong>公开的大账本</strong> 📒。谁想转账、买卖、借钱，都得把请求（一笔“<strong>交易</strong>”）排队交上去，不是说成交就成交。',
       '关键就一条：<strong>谁肯多付手续费（这笔费叫 Gas ⛽），谁就排得更靠前</strong>。账本每隔一小会儿把一批交易打包、盖章，盖完就改不了了。',
       '所以这是一场<strong>排队竞速</strong> 🏁：同一个赚钱机会好几号人都盯着，谁的交易先被打包谁吃到，慢一步就空手。你和对手抢的，就是这个“排队位置”。',
-      '<span class="guide-note">名词：<strong>Gas</strong> = 交易手续费，也是你的插队费，付得多排得前。更准确说，真正决定排序的是你愿意多给的那部分小费 priority fee。本游戏里 Gas 是你每层最重要的资源。</span>',
+      '<span class="guide-note">名词：<strong>Gas</strong> = 交易手续费，也是你的插队费，付得多排得前。<strong>Gas 池</strong>是每层给你的有限预算，要分给你选的牌；每层刷新、不结转，没用完不扣分。多张牌共用一个池，硬刚加价会额外吃 Gas，所以中途可能不够——这时 Executor 会按实际需要重新分配。</span>',
     ],
   },
   {
@@ -31,8 +31,8 @@ export const RULES_PAGES = [
       '<span class="guide-note">一层 = 一个回合，分四步走。</span>',
       '<strong>① 扫描</strong> 🔍：系统按当前场景翻出一手机会牌。每张牌面写着它能赚多少、要花多少 Gas、风险多大，还有一个<strong>时间窗口</strong>。',
       '<span class="guide-note">名词：<strong>时间窗口</strong> = 这个机会“还能撑多久”的示意。真实链上机会确实转瞬即逝，这里先作为氛围展示，暂未接入成功率计算。</span>',
-      '<strong>② 决策</strong> 🎯：挑出你这回合<strong>要出的牌</strong>，给每张分配 Gas，再给每张设一个<strong>预案</strong>：硬刚 💪、放弃 🏳️、转移 🔀。',
-      '<strong>③ 执行</strong> ⚙️：你点“执行”后就交给 Executor。它会按顺序逐张跑牌，调工具、看结果，撞上被抢、Gas 不足、交易回滚时当场重规划。',
+      '<strong>② 决策</strong> 🎯：挑出你这回合<strong>要打的牌</strong>（选哪些，不是排顺序），给每张分配 Gas，再给每张设一个<strong>预案</strong>：硬刚 💪、放弃 🏳️、转移 🔀。',
+      '<strong>③ 执行</strong> ⚙️：你点“执行”后就交给 Executor。<strong>它会自己排好执行顺序</strong>（优先打期望价值更高的牌），再逐张跑：调工具、看结果，撞上被抢、Gas 不足、交易回滚时当场重规划。<strong>你给的不是顺序，是方向</strong>——顺序由它定，你可以靠预案和干预去影响。',
       '<strong>④ 结算</strong> 🧾：每张牌给出结果，汇总这回合净收益，更新你的累计收益、Gas、连亏次数和层数。',
     ],
   },
@@ -64,6 +64,7 @@ export const RULES_PAGES = [
       '<strong>Executor</strong> 是一个 AI Agent，从第 1 层就一直跟着你。你定战略，它落地：拆任务、调用链上工具、看结果，被抢或你改令时临场重想。',
       '它干活靠一套<strong>工具（tools）</strong>：<code>fetch_prices</code> 查价 🔎、<code>monitor_mempool</code> 盯池 👀、<code>broadcast_tx</code> 广播 📡、<code>replace_tx</code> 反抢 💪、<code>scan_replacement</code> 找替代 🔀、<code>reallocate_gas</code> 调 Gas ⚖️、<code>abandon_card</code> 放弃 🏳️。',
       '执行途中的三种意外：<strong>被抢</strong>、<strong>Gas 不足</strong>、<strong>交易回滚</strong>。碰上意外，它会结合你的预案和现场情况重规划。',
+      '<strong>执行顺序由 Executor 排</strong>（默认优先期望价值高的牌）。你不用手动排序——想改打法，就用预案（被抢时怎么应对）和每回合一次的干预（临场调整顺序、Gas、放弃哪张）。',
       '每个回合你有 <strong>一次</strong> 主动插话机会 🗣️：点快捷指令，或者直接打字下令。用不用、什么时候用，你自己定。',
       '<span class="guide-note">真实性小注：本游戏建模的是公开 mempool 里逐笔出价竞争的经典形态。现实里很多 MEV 竞争已转向 PBS、私有订单流、区块构建者拍卖；这里做了简化，方便上手。</span>',
     ],
@@ -86,6 +87,15 @@ export const RULES_PAGES = [
       '<strong>输</strong> 💀：连续亏损踩到阈值，<em>并且</em>累计收益跌破<strong>失败线</strong>——两个条件同时满足才算输。',
       '如果第 20 层打完仍没站上胜利线，也会直接判负；终局没有无限重刷。',
       '顶部控制台一直挂着这些数：当前层数、Gas Pool、累计收益、胜利线、失败线。盯着它们，在越来越凶的对手手底下活到终局，就赢了。',
+    ],
+  },
+  {
+    title: 'EV 博弈与 Gas 时代说明',
+    body: [
+      'EV（期望收益）= 预期利润 × (1 - 真实风险) - Gas 成本。它是这张牌<strong>打很多次的平均收益</strong>，帮你横向比牌。',
+      '<span class="guide-note">但 EV 不是你这一把能拿到的钱 🎲。实际结算是：先掷骰子定成败，成功后利润还会上下浮动，失败则倒亏一部分 Gas。同一张 EV 为正的牌，这把可能大赚，下把可能小亏，长期才向 EV 收敛。</span>',
+      '<span class="guide-note">所以你博弈的不只是算对 EV：多张牌<strong>共用一个 Gas 池</strong>，喂了这张就少了那张，还要赌成功率那一掷。这就是这游戏比"背公式"好玩的地方。</span>',
+      '<span class="guide-note">其中"交易失败仍要烧 Gas"符合早期公开竞价（PGA）时代；现代 Flashbots bundle 里失败的交易不上链、不烧 gas。这点游戏为了博弈手感保留了旧形态。</span>',
     ],
   },
 ]

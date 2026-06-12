@@ -11,7 +11,7 @@ export const OverlayManager = {
         <div class="start-menu">
           <p class="overlay-copy">你是一支 MEV 团队的指挥官。你制定战略：挑机会、分资源、定预案、临场改价；你的 AI Executor Agent 自主地、长程地把战略执行下去：它拆解任务、真实调用链上工具、观察结果，在被对手抢占或你改令时迭代修复，最终向你交付这一轮的战果。</p>
           <label class="display-id-field">
-            <span class="label">显示用 ID</span>
+            <span class="label">请输入你的 ID</span>
             <input id="display-id-input" type="text" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" value="${escapeHtml(gameState.displayId ?? 'operator')}" placeholder="operator">
           </label>
           <div class="start-actions">
@@ -20,6 +20,7 @@ export const OverlayManager = {
           </div>
         </div>
       `,
+      { closable: false, initialFocus: '#display-id-input' },
     )
 
     panel.querySelector('#start-game').addEventListener('click', () => {
@@ -52,6 +53,7 @@ export const OverlayManager = {
             </div>
           </div>
         `,
+        { initialFocus: '#welcome-next', onClose: () => finish(onDone) },
       )
 
       panel.querySelector('#welcome-skip').addEventListener('click', () => finish(onDone))
@@ -83,13 +85,10 @@ export const OverlayManager = {
     const panel = showOverlay(
       `新对手出现：${bot.name}`,
       `
-        <div class="guide-entry bot-intro">
-          <p><strong>出现层数</strong><span>${bot.layers}</span></p>
-          <p><strong>威胁等级</strong><span class="threat-text">${bot.threat}</span></p>
-          <p><strong>风格</strong><span>${bot.style}</span></p>
-        </div>
+        <div class="bot-intro">${formatBotEntry(bot)}</div>
         <button id="bot-intro-confirm" class="primary-button" type="button">知道了</button>
       `,
+      { initialFocus: '#bot-intro-confirm', onClose: () => finish(onDone) },
     )
 
     panel.querySelector('#bot-intro-confirm').addEventListener('click', () => finish(onDone))
@@ -113,7 +112,7 @@ export const OverlayManager = {
       })
       .join('')
 
-    const panel = showOverlay('选择场景', `${intro}<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择场景', `${intro}<div class="choice-grid">${body}</div>`, { closable: false })
     panel.querySelectorAll('[data-scene-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -139,7 +138,7 @@ export const OverlayManager = {
       )
       .join('')
 
-    const panel = showOverlay('选择起始角色', `${intro}<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择起始角色', `${intro}<div class="choice-grid">${body}</div>`, { closable: false })
     panel.querySelectorAll('[data-role-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -153,9 +152,16 @@ export const OverlayManager = {
     const panel = showOverlay(
       'Boss 奖励',
       `
-        <p class="overlay-copy">${formatRoleUpgrade(role, roleLevel)}</p>
+        <section class="gentry guide-entry bot-intro" style="--accent2:${agentAccent(role ?? {})}">
+          <div class="gh">
+            <span class="gn">${role?.name ?? '角色强化'}</span>
+            <span class="gtag">Lv.${roleLevel}</span>
+          </div>
+          <p class="buffline">${formatRoleUpgrade(role, roleLevel)}</p>
+        </section>
         <button id="boss-reward-confirm" class="primary-button" type="button">继续</button>
       `,
+      { closable: false, initialFocus: '#boss-reward-confirm' },
     )
     panel.querySelector('#boss-reward-confirm').addEventListener('click', () => {
       this.hideAll()
@@ -165,6 +171,7 @@ export const OverlayManager = {
 
   showCodex(onClose = () => {}) {
     let activeTab = 'rules'
+    let rulesPageIndex = 0
 
     const render = () => {
       const panel = showCodexOverlay(
@@ -175,16 +182,32 @@ export const OverlayManager = {
             <button data-guide-tab="agents" class="${activeTab === 'agents' ? 'active' : ''}" type="button">角色</button>
             <button data-guide-tab="bots" class="${activeTab === 'bots' ? 'active' : ''}" type="button">对手</button>
           </div>
-          <div class="guide-content">${formatCodexTab(activeTab)}</div>
+          <div class="guide-content">${formatCodexTab(activeTab, rulesPageIndex)}</div>
           <button id="codex-close" class="primary-button" type="button">关闭</button>
         `,
+        {
+          initialFocus: '#codex-close',
+          onClose: () => {
+            this.hideCodex()
+            onClose()
+          },
+        },
       )
 
       panel.querySelectorAll('[data-guide-tab]').forEach((button) => {
         button.addEventListener('click', () => {
           activeTab = button.dataset.guideTab
+          if (activeTab !== 'rules') rulesPageIndex = 0
           render()
         })
+      })
+      panel.querySelector('#codex-rules-prev')?.addEventListener('click', () => {
+        rulesPageIndex = Math.max(0, rulesPageIndex - 1)
+        render()
+      })
+      panel.querySelector('#codex-rules-next')?.addEventListener('click', () => {
+        rulesPageIndex = Math.min(RULES_PAGES.length - 1, rulesPageIndex + 1)
+        render()
       })
       panel.querySelectorAll('#codex-close, #codex-close-x').forEach((button) => button.addEventListener('click', () => {
         this.hideCodex()
@@ -203,6 +226,7 @@ export const OverlayManager = {
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
+      { closable: false, initialFocus: '#restart-game' },
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
@@ -216,6 +240,7 @@ export const OverlayManager = {
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
+      { closable: false, initialFocus: '#restart-game' },
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
@@ -228,20 +253,31 @@ export const OverlayManager = {
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
+      { closable: false, initialFocus: '#restart-game' },
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
 
   hideAll() {
-    document.querySelectorAll('.overlay-layer.visible').forEach((panel) => panel.classList.remove('visible'))
+    document.querySelectorAll('.overlay-layer.visible').forEach((panel) => hidePanel(panel))
   },
 
   hideCodex() {
-    document.querySelectorAll('.codex-layer.visible').forEach((panel) => panel.classList.remove('visible'))
+    document.querySelectorAll('.codex-layer.visible').forEach((panel) => hidePanel(panel))
   },
 }
 
-function showOverlay(title, body) {
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+const focusTraps = new WeakMap()
+
+function showOverlay(title, body, options = {}) {
   const panel = getOverlay()
   OverlayManager.hideAll()
   panel.innerHTML = `
@@ -251,10 +287,15 @@ function showOverlay(title, body) {
     </div>
   `
   panel.classList.add('visible')
+  activateFocusTrap(panel, {
+    closable: options.closable,
+    initialFocus: options.initialFocus,
+    onClose: options.onClose ?? (() => OverlayManager.hideAll()),
+  })
   return panel
 }
 
-function showCodexOverlay(title, body) {
+function showCodexOverlay(title, body, options = {}) {
   const panel = getCodexOverlay()
   panel.innerHTML = `
     <div class="overlay-dialog codex-dialog">
@@ -264,6 +305,11 @@ function showCodexOverlay(title, body) {
     </div>
   `
   panel.classList.add('visible')
+  activateFocusTrap(panel, {
+    closable: options.closable,
+    initialFocus: options.initialFocus,
+    onClose: options.onClose ?? (() => OverlayManager.hideCodex()),
+  })
   return panel
 }
 
@@ -294,9 +340,88 @@ function getCodexOverlay() {
   return panel
 }
 
-function formatCodexTab(tab) {
+function hidePanel(panel) {
+  panel.classList.remove('visible')
+  deactivateFocusTrap(panel)
+}
+
+function activateFocusTrap(panel, options = {}) {
+  const existing = focusTraps.get(panel)
+  const previousActive = existing?.previousActive ?? document.activeElement
+  if (existing?.onKeyDown) panel.removeEventListener('keydown', existing.onKeyDown)
+
+  const trap = {
+    previousActive,
+    onKeyDown(event) {
+      if (!panel.classList.contains('visible')) return
+
+      if (event.key === 'Escape' && options.closable !== false) {
+        event.preventDefault()
+        options.onClose?.()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+      const focusable = getFocusable(panel)
+      if (focusable.length === 0) {
+        event.preventDefault()
+        panel.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    },
+  }
+
+  panel.addEventListener('keydown', trap.onKeyDown)
+  focusTraps.set(panel, trap)
+
+  window.requestAnimationFrame(() => {
+    const preferred = options.initialFocus ? panel.querySelector(options.initialFocus) : null
+    const target = preferred ?? getFocusable(panel)[0] ?? panel.querySelector('.overlay-dialog') ?? panel
+    if (!target.hasAttribute('tabindex') && !target.matches(FOCUSABLE_SELECTOR)) target.setAttribute('tabindex', '-1')
+    target.focus({ preventScroll: true })
+  })
+}
+
+function deactivateFocusTrap(panel) {
+  const trap = focusTraps.get(panel)
+  if (!trap) return
+  panel.removeEventListener('keydown', trap.onKeyDown)
+  focusTraps.delete(panel)
+
+  if (trap.previousActive && typeof trap.previousActive.focus === 'function' && document.contains(trap.previousActive)) {
+    trap.previousActive.focus({ preventScroll: true })
+  }
+}
+
+function getFocusable(panel) {
+  return [...panel.querySelectorAll(FOCUSABLE_SELECTOR)].filter((element) => {
+    if (element.disabled || element.getAttribute('aria-hidden') === 'true') return false
+    return Boolean(element.offsetParent || element.getClientRects().length)
+  })
+}
+
+function formatCodexTab(tab, rulesPageIndex = 0) {
   if (tab === 'rules') {
-    return RULES_PAGES.map((page) => `<section class="guide-section"><h3>${page.title}</h3>${formatParagraphs(page.body)}</section>`).join('')
+    const pageIndex = Math.max(0, Math.min(RULES_PAGES.length - 1, rulesPageIndex))
+    const page = RULES_PAGES[pageIndex]
+    return `
+      <section class="guide-section"><h3>${page.title}</h3>${formatParagraphs(page.body)}</section>
+      <div class="guide-pager codex-rule-pager">
+        <button id="codex-rules-prev" class="secondary-button" type="button" ${pageIndex === 0 ? 'disabled' : ''}>上一页</button>
+        <span>${pageIndex + 1} / ${RULES_PAGES.length}</span>
+        <button id="codex-rules-next" class="secondary-button" type="button" ${pageIndex === RULES_PAGES.length - 1 ? 'disabled' : ''}>下一页</button>
+      </div>
+    `
   }
 
   if (tab === 'agents') {

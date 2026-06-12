@@ -7,4 +7,5 @@ export const WIN_LOSS_CONFIG = {
     consecutiveLossThreshold: 2,
     cumulativeProfitBelow: -0.5,
   },
+  skipPenaltyEth: 0.1,
 }

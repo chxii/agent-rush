@@ -64,6 +64,21 @@ export const RuleDecider = {
       }
     }
 
+    if (eventType === INCIDENT_TYPES.TX_FAILED
+      || eventType === INCIDENT_TYPES.TARGET_INVALID
+      || eventType === INCIDENT_TYPES.WINDOW_EXPIRED) {
+      const affordable = buildAffordableAllocations(snapshot.allCardStatuses ?? [], remainingGasPool)
+      return {
+        action: affordable.length > 0 ? DECIDER_ACTIONS.REALLOCATE_GAS : DECIDER_ACTIONS.CONTINUE,
+        targetCardId: affectedCardId,
+        gasAllocations: affordable,
+        updatedExecutionOrder: affordable.map((item) => item.cardId),
+        reasoning: affordable.length > 0
+          ? '这张牌已经失败，RuleDecider 不尝试救回它，而是把剩余 Gas 重新调度给还能执行的牌。'
+          : '这张牌已经失败，现场没有可继续调度的剩余资源，保持结果不变。',
+      }
+    }
+
     if (eventType === INCIDENT_TYPES.TARGET_STOLEN && playerContingency === 'fight' && remainingGasPool > 0) {
       const competitorBid = Math.max(0, Math.round(Number(snapshot.trigger?.competitorGasBid) || 0))
       const gas = Math.min(currentGas + remainingGasPool, Math.max(currentGas + 1, Math.ceil(competitorBid * 1.1)))

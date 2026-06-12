@@ -1,19 +1,40 @@
-import { SCENES } from '../config/scenes.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
 import { ROLE_CONFIG } from '../config/roles.js'
+import { SCENES } from '../config/scenes.js'
 import { calculateBroadcastSuccessProbability } from '../core/ToolSimulator.js'
 import { TOOL_SIMULATOR_CONFIG } from '../config/toolSimulator.js'
 import { calculateWinLossProgress } from '../core/WinLoss.js'
 
 const CARD_TYPE_META = {
-  arbitrage: { label: '套利', className: 'type-arbitrage' },
-  sandwich: { label: '夹击', className: 'type-sandwich' },
-  front_run: { label: '抢跑', className: 'type-front-run' },
-  liquidation: { label: '清算', className: 'type-liquidation' },
-  nft_snipe: { label: 'NFT 抢购', className: 'type-nft-snipe' },
+  arbitrage: {
+    label: '套利',
+    className: 'type-arbitrage',
+    tip: 'A 便宜 B 贵，低买高卖。稳，但抢的人多，利润薄。',
+  },
+  sandwich: {
+    label: '夹击',
+    className: 'type-sandwich',
+    tip: '抢在大单前后买卖，最吃相邻排序，也最吃 Gas。',
+  },
+  front_run: {
+    label: '抢跑',
+    className: 'type-front-run',
+    tip: '正面拼出价和排队位置，Gas 不够就容易被盖过。',
+  },
+  liquidation: {
+    label: '清算',
+    className: 'type-liquidation',
+    tip: '帮系统平坏账领奖励，目标被先清就没了，堆 Gas 未必线性变强。',
+  },
+  nft_snipe: {
+    label: 'NFT 抢购',
+    className: 'type-nft-snipe',
+    tip: '抢限量名额或错价单，回报飘，窗口短，也更容易扑空。',
+  },
 }
 
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'abandoned'])
+const TUTORIAL_EV_EXPLANATION = 'EV 用基础风险估长期值；成功率是这把的实时概率，会随 Gas 和竞争变化。这是游戏把“牌值”和“能不能成交”拆开教学。'
 
 const elements = {
   header: null,
@@ -26,6 +47,7 @@ const elements = {
   timer: null,
   actionBar: null,
   selectionStatus: null,
+  tutorialPanel: null,
   interventionPanel: null,
 }
 
@@ -53,12 +75,22 @@ export const UIRenderer = {
       elements.selectionStatus.id = 'selection-status'
       elements.selectionStatus.className = 'selection-status'
       elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+    } else if (elements.selectionStatus && elements.actionBar && elements.selectionStatus.parentElement !== elements.actionBar) {
+      elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+    }
+
+    elements.tutorialPanel = document.querySelector('#tutorial-panel')
+    if (!elements.tutorialPanel && elements.handArea?.parentElement) {
+      elements.tutorialPanel = document.createElement('section')
+      elements.tutorialPanel.id = 'tutorial-panel'
+      elements.tutorialPanel.className = 'tutorial-panel'
+      elements.handArea.insertAdjacentElement('afterend', elements.tutorialPanel)
     }
 
     if (!elements.interventionPanel && elements.actionBar) {
       elements.interventionPanel = document.createElement('div')
       elements.interventionPanel.id = 'intervention-panel'
-      elements.interventionPanel.className = 'intervention-panel'
+      elements.interventionPanel.className = 'intervention-panel intervene'
       elements.actionBar.insertBefore(elements.interventionPanel, elements.actionBar.querySelector('#skip-button'))
     }
 
@@ -111,6 +143,12 @@ export const UIRenderer = {
     })
 
     elements.interventionPanel?.addEventListener('click', (event) => {
+      const skipButton = event.target.closest('[data-intervention-skip]')
+      if (skipButton && interventionRequestCallback) {
+        interventionRequestCallback({ type: 'skip_window' })
+        return
+      }
+
       const shortcutButton = event.target.closest('[data-intervention-shortcut]')
       if (!shortcutButton || !interventionRequestCallback) return
       interventionRequestCallback({
@@ -131,34 +169,35 @@ export const UIRenderer = {
   },
 
   renderHeader(gameState) {
-    const sceneName = SCENES[gameState.currentScene]?.name ?? gameState.currentScene
     const progress = calculateWinLossProgress(gameState)
+    const sceneName = SCENES[gameState.currentScene]?.name ?? gameState.currentScene ?? '未知场景'
+    const consecutiveLoss = progress.failure.consecutiveLoss
+    const consecutiveLossThreshold = progress.failure.consecutiveLossThreshold
+    const lossIsCritical = consecutiveLossThreshold > 0 && consecutiveLoss >= Math.max(1, consecutiveLossThreshold - 1)
     elements.header.innerHTML = `
-      <div>
+      <div class="stat core">
         <p class="label">层数</p>
-        <strong>${gameState.currentLayer}</strong>
+        <strong>${gameState.currentLayer} / ${progress.victory.targetLayer}</strong>
       </div>
-      <div>
+      <div class="stat scene reference">
         <p class="label">场景</p>
         <strong>${sceneName}</strong>
       </div>
-      <div>
+      <div class="stat core">
         <p class="label">Gas 池</p>
         <strong>${gameState.gasPool} / ${gameState.gasPoolMax}</strong>
       </div>
-      <div>
+      <div class="stat win core">
         <p class="label">收益</p>
         <strong>${formatEth(gameState.cumulativeProfit)}</strong>
       </div>
-      <div>
+      <div class="stat win reference">
         <p class="label">胜利线</p>
         <strong>还差 ${formatUnsignedEth(progress.victory.profitRemaining)}</strong>
-        <small>距离第 ${progress.victory.targetLayer} 层还差 ${progress.victory.layersRemaining} 层</small>
       </div>
-      <div>
-        <p class="label">失败线</p>
-        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold} 连亏</strong>
-        <small>还能再亏 ${progress.failure.lossesRemaining} 次</small>
+      <div class="stat danger ${lossIsCritical ? 'is-critical' : ''}">
+        <p class="label">连续</p>
+        <strong>${consecutiveLoss} / ${consecutiveLossThreshold}</strong>
       </div>
     `
 
@@ -221,6 +260,34 @@ export const UIRenderer = {
     this.setPlayEnabled(isPlayable && selectedIds.length > 0 && (constraints?.isValid ?? true))
   },
 
+  updateHandConstraints(cards, selectedIds = [], constraints = {}) {
+    const selectedSet = new Set(selectedIds)
+
+    cards.forEach((card) => {
+      const node = elements.handArea?.querySelector(`[data-card-id="${CSS.escape(card.id)}"]`)
+      if (!node) return
+
+      const disabledReason = constraints?.disabledReasons?.[card.id] ?? ''
+      const isSelected = selectedSet.has(card.id)
+      node.classList.toggle('blocked', Boolean(disabledReason))
+      if (node.tagName === 'BUTTON') node.disabled = Boolean(disabledReason)
+
+      let reasonNode = node.querySelector('.blocked-reason')
+      if (disabledReason && !isSelected) {
+        if (!reasonNode) {
+          reasonNode = document.createElement('span')
+          reasonNode.className = 'blocked-reason'
+          node.append(reasonNode)
+        }
+        reasonNode.textContent = disabledReason
+      } else if (reasonNode) {
+        reasonNode.remove()
+      }
+    })
+
+    this.setPlayEnabled(selectedIds.length > 0 && (constraints?.isValid ?? true))
+  },
+
   initPipeline(cards, battlePlan = {}) {
     pipelineState = cards.map((card) => ({
       ...card,
@@ -232,13 +299,7 @@ export const UIRenderer = {
   },
 
   updatePipelineCard(cardId, updates = {}) {
-    pipelineState = pipelineState.map((card) => {
-      if (card.id !== cardId) {
-        if (card.status === 'running') return { ...card, status: 'queued' }
-        return card
-      }
-      return { ...card, ...updates }
-    })
+    pipelineState = updatePipelineStateForCard(pipelineState, cardId, updates)
     this.renderPipeline()
   },
 
@@ -295,15 +356,16 @@ export const UIRenderer = {
     elements.handArea.innerHTML = `
       <section class="execution-workbench" data-execution-workbench>
         <div class="pipeline-bar" aria-label="执行顺序">
-          ${pipelineState.map((card, index) => renderPipelineChip(card, index, pipelineState.length)).join('')}
-        </div>
-        <div class="current-card-banner">
-          ${renderCurrentBanner(currentPipelineCard())}
+          <span class="pipeline-label plabel">执行顺序</span>
+          ${pipelineState.map((card, index) => renderPipelineItem(card, index, pipelineState.length)).join('')}
         </div>
       </section>
     `
 
-    if (elements.thoughtArea) elements.thoughtArea.hidden = false
+    if (elements.thoughtArea) {
+      elements.thoughtArea.hidden = false
+      if (!elements.thoughtArea.innerHTML.trim()) elements.thoughtArea.innerHTML = renderThoughtPlaceholder()
+    }
 
     animatePipelineMove(previousPositions)
   },
@@ -320,6 +382,10 @@ export const UIRenderer = {
 
   setPlayEnabled(enabled) {
     if (elements.playButton) elements.playButton.disabled = !enabled
+  },
+
+  setPlayButtonLabel(label) {
+    if (elements.playButton) elements.playButton.textContent = label
   },
 
   setTimerText(text) {
@@ -341,8 +407,20 @@ export const UIRenderer = {
       <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gas</strong>
       <small>剩余 ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gas</small>
       ${status.message ? `<span>${status.message}</span>` : ''}
-      ${renderTutorialPanel(status.tutorial)}
     `
+  },
+
+  setTutorialFeedback(tutorial) {
+    if (!elements.tutorialPanel) return
+
+    if (!tutorial) {
+      elements.tutorialPanel.hidden = true
+      elements.tutorialPanel.innerHTML = ''
+      return
+    }
+
+    elements.tutorialPanel.hidden = false
+    elements.tutorialPanel.innerHTML = renderTutorialPanel(tutorial)
   },
 
   setInterventionState(state = null) {
@@ -354,21 +432,25 @@ export const UIRenderer = {
       return
     }
 
-    const disabled = state.used || state.pending
+    const formDisabled = (state.used || state.pending) && !state.allowCustomPrompt
+    const shortcutsDisabled = state.used || state.pending
+    const countdown = Number.isFinite(Number(state.remainingSec)) ? ` · 剩 ${Math.max(0, Number(state.remainingSec))}s` : ''
+    const progress = interventionProgress(state)
     elements.interventionPanel.hidden = false
     elements.interventionPanel.innerHTML = `
+      ${state.canSkip ? `<div class="intervention-window-status"><div><span>⚠ 可干预${countdown}</span>${progress}</div><button class="secondary-button" type="button" data-intervention-skip>跳过</button></div>` : ''}
       <form class="intervention-form">
         <label>
           <span class="label">⚡ 干预</span>
-          <textarea data-intervention-input maxlength="140" rows="2" placeholder="告诉 Executor 要调整什么，例如：保住套利，放弃高风险牌。" ${disabled ? 'disabled' : ''}></textarea>
+          <textarea data-intervention-input maxlength="140" rows="2" placeholder="告诉 Executor 要调整什么，例如：保住套利，放弃高风险牌。" ${formDisabled ? 'disabled' : ''}></textarea>
         </label>
-        <button class="secondary-button" type="submit" ${disabled ? 'disabled' : ''}>发送</button>
+        <button class="secondary-button" type="submit" ${formDisabled ? 'disabled' : ''}>发送</button>
       </form>
       <div class="intervention-shortcuts">
         ${Object.values(INTERVENTION_SHORTCUTS)
           .map(
             (shortcut) =>
-              `<button class="secondary-button" type="button" data-intervention-shortcut="${shortcut.id}" ${disabled ? 'disabled' : ''}>${shortcut.label}</button>`,
+              `<button class="secondary-button" type="button" data-intervention-shortcut="${shortcut.id}" title="${shortcut.description ?? shortcut.label}" ${shortcutsDisabled ? 'disabled' : ''}>${shortcut.label}</button>`,
           )
           .join('')}
       </div>
@@ -381,6 +463,7 @@ export const UIRenderer = {
     if (elements.actionBar) elements.actionBar.dataset.phase = phase
 
     const isPlay = phase === 'play'
+    this.setPlayButtonLabel('执行')
     if (elements.playButton) elements.playButton.disabled = !isPlay
     if (elements.skipButton) elements.skipButton.disabled = !isPlay
     if (phase !== 'execute') this.setInterventionState(null)
@@ -450,45 +533,82 @@ function renderTutorialPanel(tutorial) {
   if (!tutorial) return ''
 
   return `
-    <section class="tutorial-panel">
-      <div class="tutorial-steps">
-        ${['选牌', '分 Gas', '设预案', '执行']
-          .map((step, index) => `<span class="${index <= tutorial.stepIndex ? 'active' : ''}">${index + 1}. ${step}</span>`)
-          .join('')}
-      </div>
-      <strong>${tutorial.title}</strong>
-      <p>${tutorial.body}</p>
-      ${tutorial.cards
-        .map(
-          (item) => `
-            <article class="tutorial-card-note ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
-              <div>
-                <strong>${item.name}</strong>
-                <span>${item.verdict}</span>
-              </div>
-              <small>成功率 ${formatPercent(item.successProbability)} · EV ${formatSignedEth(item.expectedValue)}</small>
-              <p>${item.formula}</p>
-            </article>
-          `,
-        )
-        .join('')}
-    </section>
+    <div class="tutorial-panel-inner">
+      ${renderTutorialInspection(tutorial)}
+    </div>
   `
 }
 
-function renderPipelineChip(card, index, total) {
+function renderTutorialInspection(tutorial) {
+  const selected = (tutorial.cards ?? []).filter((item) => item.selected)
+  if (selected.length === 0) {
+    return `<div class="tutorial-inspection empty">${tutorialEmptyHint(tutorial.layer)}</div>`
+  }
+
+  if (tutorial.layer === 3 && selected.length > 1) {
+    return `
+      <div class="tutorial-inspection compact">
+        ${selected.map((item) => `<span>${tutorialVerdictIcon(item)} ${item.typeLabel} EV ${formatSignedEth(item.expectedValue)}</span>`).join('')}
+      </div>
+    `
+  }
+
+  const item = selected[0]
+  return `
+    <div class="tutorial-inspection ${tutorial.layer === 2 ? 'with-ev-note' : ''} ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
+      <span>${tutorialVerdictIcon(item)} ${item.typeLabel} · ${item.shortId}</span>
+      <span>成功率 ${formatPercent(item.successProbability)}</span>
+      <span>EV ${formatSignedEth(item.expectedValue)}</span>
+      <span class="tutorial-inspection-verdict">${item.verdict}</span>
+      ${tutorial.layer === 2 ? `<span class="tutorial-formula">${item.formula}</span>` : ''}
+      ${tutorial.layer === 2 ? `<span class="tutorial-ev-note">${tutorial.evExplanation}</span>` : ''}
+    </div>
+  `
+}
+
+function renderPipelineItem(card, index, total) {
+  return `${renderPipelineChip(card)}${index < total - 1 ? '<span class="pipeline-arrow parrow">→</span>' : ''}`
+}
+
+function renderPipelineChip(card) {
   const typeMeta = typeMetaFor(card.type)
   const status = normalizeStatus(card.status)
-  const statusClass = status === 'queued' ? 'pending' : status === 'running' || status === 'incident' ? 'now' : status === 'success' ? 'done' : 'fail'
+  const statusClass = status === 'queued' ? 'pending' : status === 'running' ? 'now' : status === 'success' ? 'done' : 'fail'
+  const label = `${typeMeta.label} ${shortId(card.id)}`
+  const statusLabel = pipelineStatusLabel(card, status)
+  const hint = `查看 ${label} 的执行思路：${statusLabel}`
   return `
-    <button class="pipeline-chip pchip ${typeMeta.className} ${statusClass} status-${status}" type="button" data-pipeline-card-id="${card.id}">
+    <button class="pipeline-chip pchip ${typeMeta.className} ${statusClass} status-${status}" type="button" data-pipeline-card-id="${card.id}" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}">
       <span class="dot"></span>
       <span class="pipeline-main">
-        <strong>${typeMeta.label} ${shortId(card.id)}</strong>
-        <small>${statusLabel(status)}</small>
+        <strong>${label}</strong>
+        <small>${statusLabel}</small>
       </span>
-      ${index < total - 1 ? '<span class="pipeline-arrow parrow">→</span>' : ''}
     </button>
+  `
+}
+
+function renderThoughtPlaceholder() {
+  return `
+    <div class="thought-placeholder" aria-live="polite">
+      <span class="trace-badge">TRACE</span>
+      <strong>Executor thinking</strong>
+      <p>正在拆解执行顺序、工具调用和临场预案。</p>
+      <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+  `
+}
+
+function interventionProgress(state = {}) {
+  const total = Number(state.windowTotalSec)
+  const remaining = Number(state.remainingSec)
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(remaining)) return ''
+
+  const percent = Math.max(0, Math.min(100, (remaining / total) * 100))
+  return `
+    <span class="intervention-progress" aria-hidden="true">
+      <span style="width:${percent.toFixed(1)}%"></span>
+    </span>
   `
 }
 
@@ -514,19 +634,6 @@ function animatePipelineMove(previousPositions) {
   })
 }
 
-function renderCurrentBanner(card) {
-  if (!card) {
-    return '<span class="label">Pipeline</span><strong>等待执行队列</strong>'
-  }
-
-  const typeMeta = typeMetaFor(card.type)
-  return `
-    <span class="now-badge">NOW</span>
-    <strong class="${typeMeta.className}">${typeMeta.label} · ${shortId(card.id)}</strong>
-    <span class="current-card-meta">预期 ${formatEth(card.expectedProfit)} · 预案 ${contingencyLabel(card.contingency)} · Gas ${card.allocatedGas ?? card.gasCost}</span>
-  `
-}
-
 export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], gasAllocations = {}, role, roleLevel }) {
   if (layer < 1 || layer > 3) return null
 
@@ -537,6 +644,11 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
     const ev = expectedValue(card, gas)
     return {
       name: `${typeMetaFor(card.type).label} ${shortId(card.id)}`,
+      cardId: card.id,
+      typeLabel: typeMetaFor(card.type).label,
+      shortId: shortId(card.id),
+      gas,
+      selected: selectedIds.has(card.id),
       successProbability,
       expectedValue: ev,
       recommended: recommendedTutorialCard(layer, card, ev),
@@ -546,13 +658,18 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
     }
   })
 
-  const selectedGasChanged = selectedCards.some((card) => (gasAllocations[card.id] ?? card.gasCost) !== card.gasCost)
   return {
-    stepIndex: selectedCards.length === 0 ? 0 : selectedGasChanged ? 2 : 1,
-    title: tutorialTitle(layer),
-    body: tutorialBody(layer, notes),
+    layer,
     cards: notes,
+    evExplanation: layer === 2 ? TUTORIAL_EV_EXPLANATION : '',
   }
+}
+
+function renderPipelineCount() {
+  const done = pipelineState.filter((card) => normalizeStatus(card.status) === 'success').length
+  const failed = pipelineState.filter((card) => normalizeStatus(card.status) === 'failed').length
+  const pending = pipelineState.filter((card) => normalizeStatus(card.status) === 'queued').length
+  return `${done} 成 · ${failed} 跑 · ${pending} 待 / 共 ${pipelineState.length}`
 }
 
 function estimateSuccessProbability(card, gas, context = {}) {
@@ -581,31 +698,10 @@ function recommendedTutorialCard(layer, card, ev) {
 
 function tutorialVerdict(layer, card, selected, ev) {
   if (card.isScam) return selected ? '别选：牌面风险低但真实风险极高。' : '排雷：这是骗局牌，别被高利润骗走 Gas。'
+  if (layer === 1) return `${typeMetaFor(card.type).tip} ${selected ? '看清类型后再决定是否值得打。' : '点牌可观察 EV 和成功率。'}`
   if (layer === 2 && card.type === 'sandwich') return selected ? '正确：现在调高 Gas 看成功率变化。' : '推荐：夹击最吃 Gas，适合练习溢价。'
   if (ev < 0) return selected ? '不推荐：算上真实风险和 Gas 后 EV 为负。' : '观察即可：EV 为负，长期会亏。'
   return selected ? '可以打：风险、Gas 和收益能对上。' : '可选：EV 为正，适合按步骤执行。'
-}
-
-function tutorialTitle(layer) {
-  const titles = {
-    1: '第 1 关：先排雷，再选稳牌',
-    2: '第 2 关：牌型配 Gas',
-    3: '第 3 关：用 EV 做决定',
-  }
-  return titles[layer] ?? ''
-}
-
-function tutorialBody(layer, notes) {
-  if (layer === 1) return '点不同机会牌，比较显示风险和真实 EV。高利润低显示风险不一定安全。'
-  if (layer === 2) return '选中夹击或抢跑后调 Gas，成功率会实时重算。夹击牌从额外 Gas 里吃到的收益最大。'
-  const best = [...notes].sort((a, b) => b.expectedValue - a.expectedValue)[0]
-  return `Bot-404 威胁很低，但仍要按 EV 排序。当前最稳的是 ${best?.name ?? 'EV 为正的牌'}。`
-}
-
-function currentPipelineCard() {
-  return pipelineState.find((card) => card.status === 'running' || card.status === 'incident')
-    ?? pipelineState.find((card) => !TERMINAL_STATUSES.has(card.status))
-    ?? pipelineState[pipelineState.length - 1]
 }
 
 function contingencyOption(value, label, selectedValue) {
@@ -640,6 +736,42 @@ function statusLabel(status) {
   }
   return labels[status] ?? status
 }
+
+function tutorialEmptyHint(layer) {
+  const hints = {
+    1: '点一张牌，看看它值不值得打 →',
+    2: '选一张牌，调 Gas 看 EV 怎么变 →',
+    3: '选 2 张牌，给每张设好预案 →',
+  }
+  return hints[layer] ?? '点一张牌查看账目 →'
+}
+
+function tutorialVerdictIcon(item) {
+  if (item.recommended) return '🟢'
+  if (item.avoid) return '🔴'
+  return '⚪'
+}
+
+function pipelineStatusLabel(card, status) {
+  if (status === 'queued') return '排队中'
+  if (status === 'running') return '执行中'
+  if (status === 'incident') return '重想中'
+  if (status === 'success' || status === 'failed') return formatSignedEth(card.actualProfit ?? 0)
+  return statusLabel(status)
+}
+
+function updatePipelineStateForCard(state = [], cardId, updates = {}) {
+  return state.map((card) => {
+    if (card.id !== cardId) {
+      if (card.status === 'running' || card.status === 'incident') return { ...card, status: 'queued' }
+      return card
+    }
+    if (TERMINAL_STATUSES.has(card.status) && !TERMINAL_STATUSES.has(updates.status)) return card
+    return { ...card, ...updates }
+  })
+}
+
+export const __testUpdatePipelineStateForCard = updatePipelineStateForCard
 
 function contingencyLabel(value) {
   const labels = {
@@ -676,4 +808,13 @@ function formatPercent(value) {
 
 function roundEth(value) {
   return Math.round(value * 1000) / 1000
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

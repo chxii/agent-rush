@@ -4,7 +4,7 @@ export const DEFAULT_CONTINGENCY = 'fight'
 export const DECISION_LIMITS = {
   minGasPerSelectedCard: 0,
   maxSelectedCardsByLayer: [
-    { maxLayer: 3, maxCards: 1 },
+    { maxLayer: 2, maxCards: 1 },
     { maxLayer: 7, maxCards: 2 },
     { maxLayer: 20, maxCards: 3 },
   ],

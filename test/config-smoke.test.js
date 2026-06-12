@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { CARD_TYPES, COMPETITION_BY_RARITY, RARITY } from '../src/config/cards.js'
 import { LAYER_CONFIG } from '../src/config/scenes.js'
-import { buildTutorialFeedback } from '../src/ui/UIRenderer.js'
+import { __testUpdatePipelineStateForCard, buildTutorialFeedback } from '../src/ui/UIRenderer.js'
 
 test('card config can be imported in Node and has the expected shape', () => {
   assert.ok(Array.isArray(CARD_TYPES))
@@ -43,7 +43,44 @@ test('tutorial feedback computes card metrics without shadowing the EV helper', 
     })
 
     assert.equal(feedback.cards.length, cards.length)
+    assert.equal(feedback.stepIndex, undefined)
     assert.equal(typeof feedback.cards[0].successProbability, 'number')
     assert.equal(typeof feedback.cards[0].expectedValue, 'number')
+    assert.equal(feedback.cards[0].cardId, cards[0].id)
   })
+})
+
+test('tutorial layer 2 shows all five card types while keeping sandwich recommended', () => {
+  const cards = LAYER_CONFIG[2].tutorialCards
+  const types = new Set(cards.map((card) => card.type))
+
+  for (const type of CARD_TYPES) assert.equal(types.has(type), true, `${type} tutorial layer 2 coverage`)
+
+  const feedback = buildTutorialFeedback({
+    layer: 2,
+    cards,
+    selectedCards: cards,
+    gasAllocations: Object.fromEntries(cards.map((card) => [card.id, card.gasCost])),
+  })
+
+  assert.equal(feedback.cards.length, 5)
+  assert.equal(feedback.cards.find((item) => item.cardId === 'tutorial_2_sandwich').recommended, true)
+  assert.equal(feedback.evExplanation.includes('成功率'), true)
+  assert.equal(feedback.evExplanation.includes('游戏'), true)
+})
+
+test('pipeline state keeps terminal cards terminal during later updates', () => {
+  const state = [
+    { id: 'done', status: 'success', actualProfit: 1.2 },
+    { id: 'current', status: 'incident' },
+    { id: 'next', status: 'queued' },
+  ]
+
+  const afterDecision = __testUpdatePipelineStateForCard(state, 'done', { status: 'running' })
+  assert.equal(afterDecision.find((card) => card.id === 'done').status, 'success')
+
+  const afterNextStart = __testUpdatePipelineStateForCard(afterDecision, 'next', { status: 'running' })
+  assert.equal(afterNextStart.find((card) => card.id === 'done').status, 'success')
+  assert.equal(afterNextStart.find((card) => card.id === 'current').status, 'queued')
+  assert.equal(afterNextStart.find((card) => card.id === 'next').status, 'running')
 })

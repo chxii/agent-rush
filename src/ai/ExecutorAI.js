@@ -23,7 +23,8 @@ const OUTPUT_CONTRACTS = {
   InitialPlanning: [
     'Output schema:',
     '{ "reasoning": string, "executionOrder": string[] }',
-    'executionOrder must contain only selected card ids from input.cards.',
+    'executionOrder must contain every selected card id from input.cards exactly once.',
+    'Planning may only reorder cards; do not omit, discard, skip, or abandon any selected card during initial planning.',
     'Do not include gasAllocations.',
   ].join('\n'),
   SingleCardPlan: [
@@ -118,7 +119,7 @@ export const ExecutorAI = {
     const startedAt = performance.now()
 
     try {
-      appendSystemLog(`[LLM] ${callType} 发起真实调用（${options.stream ? '流式' : '非流式'}）。`)
+      appendSystemLog(`[LLM] ${callType} 发起真实调用（${options.stream ? '流式' : '非流式'}）：${callTypeActivity(callType)}`)
       const result = options.stream
         ? await requestStreamingJson(callType, input, options.onFieldDelta, options.streamField)
         : await requestJson(callType, input)
@@ -138,7 +139,7 @@ export const ExecutorAI = {
         appendSystemLog(`[LLM] ${callType} AI 响应被截断，已修复可用 JSON 并继续。`)
       }
 
-      appendSystemLog(`[LLM] ${callType} 成功，用时 ${elapsedMs}ms，返回摘要：${summarizeText(result.rawContent)}`)
+      appendSystemLog(`[LLM] ${callType} 完成，用时 ${elapsedMs}ms`)
       setCachedResponse(callType, input, response)
       return response
     } catch (error) {
@@ -667,6 +668,17 @@ function summarizeText(text) {
   const normalized = String(text ?? '').replace(/\s+/g, ' ').trim()
   if (!normalized) return '空响应'
   return normalized.length > 220 ? `${normalized.slice(0, 220)}...` : normalized
+}
+
+function callTypeActivity(callType) {
+  const activities = {
+    InitialPlanning: '正在拆解任务、规划执行顺序。',
+    IncidentResponse: '出事了，正在评估现场、决定应对。',
+    PlayerIntervention: '正在理解你的指令、调整计划。',
+    SettlementReport: '正在复盘这一回合、生成总结。',
+    SingleCardPlan: '正在为当前这张牌规划下一步。',
+  }
+  return activities[callType] ?? '正在处理当前请求。'
 }
 
 function formatValidationErrors(errors = []) {

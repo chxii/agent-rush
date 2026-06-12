@@ -63,6 +63,9 @@ export const ProgressionEngine = {
   },
 
   advanceAfterReward(gameState, completedLayer) {
+    if (completedLayer === 3 && LAYER_CONFIG[completedLayer]?.isTutorial) {
+      gameState.markTutorialSeen()
+    }
     gameState.currentLayer = Math.min(completedLayer + 1, WIN_LOSS_CONFIG.victory.targetLayer)
     gameState.gasPoolMax = gameState.gasPoolMaxForStage(gameState.currentLayer)
     gameState.gasPool = gameState.gasPoolMax

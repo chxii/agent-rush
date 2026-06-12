@@ -1,5 +1,6 @@
 const cardSections = new Map()
 const cardMeta = new Map()
+const loadingRows = new Map()
 
 const BOT_EMOJI = {
   'Bot-404': '🐣',
@@ -79,6 +80,47 @@ export const ThoughtChainPanel = {
     }
   },
 
+  showLoading(key, message, options = {}) {
+    if (!key || loadingRows.has(key)) return
+
+    const panel = options.cardId ? getThoughtPanel() : getLogPanel()
+    const parent = options.cardId ? getCardBody(options.cardId, options.cardTitle) : panel
+    if (!parent) return
+
+    const row = document.createElement('div')
+    row.className = options.cardId
+      ? 'thought-event event-loading is-loading'
+      : 'log-line log-executor loading-line is-loading'
+
+    if (options.cardId) {
+      row.innerHTML = `
+        <span class="event-icon">AI</span>
+        <div>
+          <strong>Executor thinking</strong>
+          <p>${escapeHtml(message)}</p>
+          <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+      `
+    } else {
+      row.innerHTML = `<span class="terminal-prefix">${this.displayId}@executor-pc &gt;&gt;</span> ${escapeHtml(message)} <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>`
+    }
+
+    parent.append(row)
+    loadingRows.set(key, row)
+    scrollToBottom(panel)
+  },
+
+  clearLoading(key) {
+    if (!key) return
+    loadingRows.get(key)?.remove()
+    loadingRows.delete(key)
+  },
+
+  clearAllLoading() {
+    loadingRows.forEach((row) => row.remove())
+    loadingRows.clear()
+  },
+
   startCard(card) {
     cardMeta.set(card.id, card)
     getCardBody(card.id, cardLabel(card))
@@ -91,8 +133,8 @@ export const ThoughtChainPanel = {
 
     const row = document.createElement('div')
     row.className = `thought-event event-${event.kind ?? 'system'}`
-    if (event.kind === 'bot' || event.kind === 'incident') row.classList.add('is-steal')
-    if (event.kind === 'repair') row.classList.add('is-replan')
+    if (event.kind === 'bot' || event.kind === 'incident') row.classList.add('is-steal', 'steal')
+    if (event.kind === 'repair') row.classList.add('is-replan', 'replan')
 
     row.innerHTML = `
       <span class="event-icon">${iconForKind(event.kind)}</span>
@@ -120,6 +162,7 @@ export const ThoughtChainPanel = {
     if (thoughtPanel) thoughtPanel.innerHTML = ''
     cardSections.clear()
     cardMeta.clear()
+    loadingRows.clear()
   },
 }
 
@@ -136,13 +179,14 @@ function getCardBody(cardId, title = cardId) {
   }
 
   const meta = cardMeta.get(cardId)
+  panel.querySelector('.thought-placeholder')?.remove()
   const section = document.createElement('section')
   section.className = `thought-card is-active ${meta ? `type-${meta.type.replaceAll('_', '-')}` : ''}`
   section.dataset.cardId = cardId
   section.innerHTML = `
     <div class="thought-card-header">
       <div>
-        <span class="now-badge">TRACE</span>
+        <span class="trace-badge">TRACE</span>
         <strong>${title}</strong>
       </div>
       <span>${cardId}</span>
