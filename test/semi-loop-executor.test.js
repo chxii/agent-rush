@@ -178,6 +178,38 @@ test('shortcut player intervention does not spend LLM replan budget', async () =
   assert.equal(result.telemetry.deciderCalls.decideOnIncident, 0)
 })
 
+test('semi-loop formats reallocate gas trace params without object placeholders', async () => {
+  const interventionState = createInterventionState()
+  requestPlayerIntervention(interventionState, { type: 'shortcut', shortcutId: 'fight_all' })
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 10, b: 10 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 1, scene: 'dex_arb' },
+    {
+      decider: createSpyDecider(),
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['success', 'success'] }),
+      interventionState,
+      maxReplans: 1,
+    },
+  )
+
+  const reallocateEvent = result.cards
+    .flatMap((item) => item.events)
+    .find((event) => event.title === 'reallocate_gas')
+
+  assert.ok(reallocateEvent)
+  assert.match(reallocateEvent.meta, /allocations=/)
+  assert.match(reallocateEvent.meta, /a:\d+/)
+  assert.doesNotMatch(reallocateEvent.meta, /\[object Object\]/)
+})
+
 test('headless 1000 RuleDecider runs do not crash and have bounded semi-loop incidents', async () => {
   const runs = 1000
   let incidents = 0

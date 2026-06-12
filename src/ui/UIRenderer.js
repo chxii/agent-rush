@@ -600,7 +600,7 @@ function renderCurrentBanner(card) {
 
   const typeMeta = typeMetaFor(card.type)
   return `
-    <span class="now-badge">NOW</span>
+    <span class="current-card-kicker">当前执行</span>
     <strong class="${typeMeta.className}">${typeMeta.label} · ${shortId(card.id)}</strong>
     <span class="current-card-meta">预期 ${formatEth(card.expectedProfit)} · 预案 ${contingencyLabel(card.contingency)} · Gas ${card.allocatedGas ?? card.gasCost}</span>
   `

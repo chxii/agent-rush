@@ -142,7 +142,7 @@ function getCardBody(cardId, title = cardId) {
   section.innerHTML = `
     <div class="thought-card-header">
       <div>
-        <span class="now-badge">TRACE</span>
+        <span class="trace-badge">TRACE</span>
         <strong>${title}</strong>
       </div>
       <span>${cardId}</span>
