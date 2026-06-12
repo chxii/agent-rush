@@ -521,11 +521,6 @@ function renderTutorialPanel(tutorial) {
 
   return `
     <div class="tutorial-panel-inner">
-      <div class="tutorial-steps">
-        ${['选牌', '分 Gas', '设预案', '执行']
-          .map((step, index) => `<span class="${index <= tutorial.stepIndex ? 'active' : ''}">${index + 1}. ${step}</span>`)
-          .join('')}
-      </div>
       ${renderTutorialInspection(tutorial)}
     </div>
   `
@@ -621,8 +616,10 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
     const ev = expectedValue(card, gas)
     return {
       name: `${typeMetaFor(card.type).label} ${shortId(card.id)}`,
+      cardId: card.id,
       typeLabel: typeMetaFor(card.type).label,
       shortId: shortId(card.id),
+      gas,
       selected: selectedIds.has(card.id),
       successProbability,
       expectedValue: ev,
@@ -633,14 +630,8 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
     }
   })
 
-  const selectedGasChanged = selectedCards.some((card) => (gasAllocations[card.id] ?? card.gasCost) !== card.gasCost)
-  const stepIndex = selectedCards.length === 0 ? 0 : selectedGasChanged ? 2 : 1
   return {
     layer,
-    stepIndex,
-    title: tutorialTitle(layer),
-    body: tutorialBody(layer, notes),
-    extraHtml: tutorialExtraHtml(layer, stepIndex),
     cards: notes,
   }
 }
@@ -682,49 +673,6 @@ function tutorialVerdict(layer, card, selected, ev) {
   if (layer === 2 && card.type === 'sandwich') return selected ? '正确：现在调高 Gas 看成功率变化。' : '推荐：夹击最吃 Gas，适合练习溢价。'
   if (ev < 0) return selected ? '不推荐：算上真实风险和 Gas 后 EV 为负。' : '观察即可：EV 为负，长期会亏。'
   return selected ? '可以打：风险、Gas 和收益能对上。' : '可选：EV 为正，适合按步骤执行。'
-}
-
-function tutorialTitle(layer) {
-  const titles = {
-    1: '第 1 关：先排雷，再选稳牌',
-    2: '第 2 关：配 Gas，看 EV',
-    3: '第 3 关：预案和干预',
-  }
-  return titles[layer] ?? ''
-}
-
-function tutorialBody(layer, notes) {
-  if (layer === 1) return '先找骗局牌：显示风险很低、利润离谱，真实 EV 却很差。顺手把 5 种牌型认一遍，不同牌吃 Gas 的方式不一样。'
-  if (layer === 2) return 'Gas 池是本层预算，不用花光，也不结转。调每张牌的 Gas，观察成功率和 EV；EV 为正，才值得长期打。'
-  const best = [...notes].sort((a, b) => b.expectedValue - a.expectedValue)[0]
-  return `每张牌都要设预案：被抢时硬刚、放弃，还是转移。Executor 会自己排执行顺序，通常优先打更有价值的牌；你通过预案和干预影响它。当前最稳的是 ${best?.name ?? 'EV 为正的牌'}。`
-}
-
-function tutorialExtraHtml(layer, stepIndex) {
-  if (layer === 1) {
-    return ''
-  }
-
-  if (layer === 2) {
-    return `
-      <div class="tutorial-tip">
-        <strong>EV 公式</strong>
-        <span>预期利润 × (1 - 真实风险) - 预计烧的 Gas。EV 为负代表长期亏，哪怕牌面利润看起来很香。</span>
-      </div>
-    `
-  }
-
-  if (layer === 3 && stepIndex >= 2) {
-    return `
-      <div class="contingency-guide">
-        <span><strong>硬刚</strong>：被抢时加价 replace 抢回，可能成功，也会多烧 Gas。</span>
-        <span><strong>放弃</strong>：立刻止损，只烧少量 Gas，保住池子给后面的牌。</span>
-        <span><strong>转移</strong>：找一张没打过的正 EV 替补牌；找不到就等同放弃。</span>
-      </div>
-    `
-  }
-
-  return ''
 }
 
 function currentPipelineCard() {

@@ -157,7 +157,7 @@ function broadcastTx(state, params, rng, config) {
 
   if (card.opportunityStillValid === false || params.opportunityStillValid === false) {
     const gasLost = spendFailureGas(state, card, gas, 'invalidOpportunity', config)
-    settleCard(card, 'failed', roundEth(-gasLost * config.gas.gasToEth), 'Opportunity is no longer valid before broadcast.')
+    settleCard(card, 'failed', roundEth(-gasLost * config.gas.gasToEth), '广播前机会已经失效，价差窗口没了。')
     return {
       success: false,
       tool: 'broadcast_tx',
@@ -231,7 +231,7 @@ function broadcastTx(state, params, rng, config) {
     const gasLost = spendFailureGas(state, card, gas, 'txFailed', config)
     actualGasConsumed = gasLost
     const loss = roundEth(-gasLost * config.gas.gasToEth)
-    settleCard(card, 'failed', loss, '交易回滚或错过区块窗口。')
+    settleCard(card, 'failed', loss, '没抢到这个区块，交易没打包成功。')
   }
 
   return {

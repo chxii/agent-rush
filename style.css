@@ -893,7 +893,7 @@ h3 {
 .intervention-form textarea {
   min-height: 46px;
   max-height: 90px;
-  resize: vertical;
+  resize: none;
   line-height: 1.45;
 }
 
@@ -1391,25 +1391,6 @@ code {
 .tutorial-panel-inner {
   display: grid;
   gap: 8px;
-}
-
-.tutorial-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.tutorial-steps span {
-  border: 1px solid var(--line);
-  color: var(--muted);
-  padding: 5px 6px;
-  font-size: 11px;
-  text-align: center;
-}
-
-.tutorial-steps span.active {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .tutorial-inspection {

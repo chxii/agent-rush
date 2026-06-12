@@ -43,7 +43,9 @@ test('tutorial feedback computes card metrics without shadowing the EV helper', 
     })
 
     assert.equal(feedback.cards.length, cards.length)
+    assert.equal(feedback.stepIndex, undefined)
     assert.equal(typeof feedback.cards[0].successProbability, 'number')
     assert.equal(typeof feedback.cards[0].expectedValue, 'number')
+    assert.equal(feedback.cards[0].cardId, cards[0].id)
   })
 })

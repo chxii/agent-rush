@@ -249,6 +249,144 @@ test('tutorial layers 1 and 2 use scripted decider without intervention delay/co
   }
 })
 
+test('tutorial layer summaries are specific to each tutorial layer', async () => {
+  const originalState = captureRoundEngineState()
+  const originalRun = ExecutionEngine.runSemiLoopMode
+  const originalRenderHand = UIRenderer.renderHand
+  const originalSetPlayEnabled = UIRenderer.setPlayEnabled
+  const originalSetSelectionStatus = UIRenderer.setSelectionStatus
+  const originalSetTimerText = UIRenderer.setTimerText
+  const originalSetExecutionMode = UIRenderer.setExecutionMode
+  const originalInitPipeline = UIRenderer.initPipeline
+  const originalSetInterventionState = UIRenderer.setInterventionState
+  const originalSetPlayButtonLabel = UIRenderer.setPlayButtonLabel
+  const summaries = []
+
+  try {
+    ExecutionEngine.runSemiLoopMode = async (_battlePlan, gameState, options) => {
+      const report = await options.decider.summarize({ completedCards: [], executionLog: [], totalGasUsed: 0, initialGasPool: 100 })
+      summaries.push({ layer: gameState.currentLayer, report })
+      return { cards: [], netProfit: 0, gasUsed: 0, aiSummary: report.summary, decisionHighlights: report.decisionHighlights }
+    }
+    UIRenderer.renderHand = () => {}
+    UIRenderer.setPlayEnabled = () => {}
+    UIRenderer.setSelectionStatus = () => {}
+    UIRenderer.setTimerText = () => {}
+    UIRenderer.setExecutionMode = () => {}
+    UIRenderer.initPipeline = () => {}
+    UIRenderer.setInterventionState = () => {}
+    UIRenderer.setPlayButtonLabel = () => {}
+
+    for (const layer of [1, 2, 3]) {
+      RoundEngine.gameState = { currentLayer: layer, phase: 'execute', tutorialSeen: false, gasPool: 150 }
+      RoundEngine.currentHand = [card(`selected-${layer}`, 40)]
+      RoundEngine.selectedIds = new Set([`selected-${layer}`])
+      RoundEngine.decisionDraft = {
+        gasAllocations: { [`selected-${layer}`]: 40 },
+        contingencies: { [`selected-${layer}`]: 'fight' },
+      }
+      RoundEngine.battlePlan = null
+      RoundEngine._tutorialClosingLogged = true
+
+      await RoundEngine.startExecute()
+    }
+
+    assert.match(summaries[0].report.summary, /第 1 关/)
+    assert.doesNotMatch(summaries[0].report.summary, /被抢暂停|一次干预|第 3 关/)
+    assert.match(summaries[1].report.summary, /第 2 关/)
+    assert.doesNotMatch(summaries[1].report.summary, /被抢暂停|一次干预|第 3 关/)
+    assert.match(summaries[2].report.summary, /第 3 关/)
+    assert.match(summaries[2].report.summary, /被抢暂停|一次干预/)
+  } finally {
+    Object.assign(RoundEngine, originalState)
+    ExecutionEngine.runSemiLoopMode = originalRun
+    UIRenderer.renderHand = originalRenderHand
+    UIRenderer.setPlayEnabled = originalSetPlayEnabled
+    UIRenderer.setSelectionStatus = originalSetSelectionStatus
+    UIRenderer.setTimerText = originalSetTimerText
+    UIRenderer.setExecutionMode = originalSetExecutionMode
+    UIRenderer.initPipeline = originalInitPipeline
+    UIRenderer.setInterventionState = originalSetInterventionState
+    UIRenderer.setPlayButtonLabel = originalSetPlayButtonLabel
+  }
+})
+
+test('tutorial settlement recap explains failed normal cards as probability outcomes', () => {
+  const originalState = captureRoundEngineState()
+  const queued = []
+
+  try {
+    RoundEngine.queueTutorialLogs = (messages = []) => queued.push(...messages)
+    RoundEngine.gameState = { currentLayer: 1, tutorialSeen: false, role: null, roleLevel: 1 }
+    RoundEngine.currentHand = [card('normal-card', 40)]
+    RoundEngine.selectedIds = new Set(['normal-card'])
+    RoundEngine.decisionDraft = {
+      gasAllocations: { 'normal-card': 40 },
+      contingencies: { 'normal-card': 'fight' },
+    }
+    RoundEngine._tutorialClosingLogged = false
+
+    RoundEngine.appendTutorialSettlementLog({
+      cards: [{ ...card('normal-card', 40), status: 'failed', actualProfit: -0.01, resultReason: '没抢到这个区块，交易没打包成功。' }],
+      netProfit: -0.01,
+    })
+
+    assert.equal(queued.some((line) => line.includes('你没选错')), true)
+    assert.equal(queued.some((line) => line.includes('概率') || line.includes('成功率不是 100%')), true)
+  } finally {
+    Object.assign(RoundEngine, originalState)
+  }
+})
+
+test('tutorial layer 3 settlement recap includes intervention decision and final card results', () => {
+  const originalState = captureRoundEngineState()
+  const queued = []
+
+  try {
+    RoundEngine.queueTutorialLogs = (messages = []) => queued.push(...messages)
+    RoundEngine.gameState = { currentLayer: 3, tutorialSeen: false, role: null, roleLevel: 1 }
+    RoundEngine.currentHand = [card('first-card', 40), card('second-card', 30)]
+    RoundEngine.selectedIds = new Set(['first-card', 'second-card'])
+    RoundEngine.decisionDraft = {
+      gasAllocations: { 'first-card': 40, 'second-card': 30 },
+      contingencies: { 'first-card': 'fight', 'second-card': 'abandon' },
+    }
+    RoundEngine._tutorialClosingLogged = false
+
+    RoundEngine.appendTutorialSettlementLog({
+      cards: [
+        { ...card('first-card', 40), status: 'failed', actualProfit: -0.02, resultReason: '目标被 Bot-404 抢走。' },
+        { ...card('second-card', 30), status: 'success', actualProfit: 1.1, resultReason: '交易已在链上确认。' },
+      ],
+      netProfit: 1.08,
+      telemetry: {
+        incidents: [
+          { event: 'target_stolen', affectedCardId: 'first-card', trigger: { stolen: true } },
+          { event: 'player_intervention', affectedCardId: 'second-card', playerInstruction: 'shortcut:focus_best_gas' },
+        ],
+        incidentDecisions: [
+          {
+            event: 'player_intervention',
+            cardId: 'second-card',
+            decision: {
+              action: 'reallocate_gas',
+              targetCardId: 'second-card',
+              gasAllocations: [{ cardId: 'second-card', gas: 70 }],
+            },
+          },
+        ],
+      },
+    })
+
+    assert.equal(queued.some((line) => line.includes('Bot-404 抢走')), true)
+    assert.equal(queued.some((line) => line.includes('Gas 集中最优') && line.includes('重新分配 Gas')), true)
+    assert.equal(queued.some((line) => line.includes('最终账本') && line.includes('成功')), true)
+    assert.equal(queued.some((line) => line.includes('三课学完了')), true)
+  } finally {
+    Object.assign(RoundEngine, originalState)
+  }
+})
+
 test('tutorial shortcut intervention resumes execution without requiring custom prompt', () => {
   const originalState = captureRoundEngineState()
   const originalSetInterventionState = UIRenderer.setInterventionState
@@ -299,6 +437,7 @@ function captureRoundEngineState() {
     _tutorialExecutionResume: RoundEngine._tutorialExecutionResume,
     _tutorialLogQueue: RoundEngine._tutorialLogQueue,
     _tutorialLogTimerId: RoundEngine._tutorialLogTimerId,
+    queueTutorialLogs: RoundEngine.queueTutorialLogs,
   }
 }
 

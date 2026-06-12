@@ -127,6 +127,22 @@ test('broadcast_tx success distribution tracks the configured probability', () =
   assert.ok(Math.abs(observed - expectedProbability) < 0.05, `observed=${observed}, expected=${expectedProbability}`)
 })
 
+test('broadcast_tx failure reasons are localized and beginner-readable', () => {
+  const simulator = createToolSimulator({
+    cards: [createCards()[0]],
+    gasPool: 100,
+    botName: null,
+    rng: createSequenceRng([0.999]),
+    allocations: [{ cardId: 'card_A', gas: 40 }],
+  })
+
+  const result = simulator.execute('broadcast_tx', { cardId: 'card_A', gas: 40 })
+
+  assert.equal(result.success, false)
+  assert.equal(result.message, '没抢到这个区块，交易没打包成功。')
+  assert.equal(/[A-Za-z]/.test(result.message), false)
+})
+
 test('fixed seed batch simulation is reproducible', async () => {
   const first = await runBatchSimulation({ seed: 'a1-seed' })
   const second = await runBatchSimulation({ seed: 'a1-seed' })
