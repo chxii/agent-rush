@@ -75,8 +75,8 @@ export const RULES_PAGES = [
       '🔭 <strong>侦察型</strong>：每轮多发机会牌，随等级递增——Lv1 多发 1 张、Lv2 多发 2 张、Lv3 多发 3 张。',
       '🛡️ <strong>抗压型</strong>：更扛抢，反抢更便宜更容易成。',
       '⚡ <strong>效率型</strong>：每层 Gas Pool 上限更高，家底厚。',
-      '角色还能<strong>升级</strong>：每打通一个 <strong>Boss 层</strong>，你的角色就强化一级，最高 3 级。',
-      '<span class="guide-note">名词：<strong>Boss 层</strong> = 每个对手段位的最后一关，难度更高、通关给奖励。全程一共 5 个 Boss 层（第 4、8、13、16、20 层），前 3 个把角色升到满级 Lv.3。</span>',
+      '角色还能<strong>升级</strong>：打通第 7、12、17 层的 Boss 后各强化一级，最高 Lv.3。',
+      '<span class="guide-note">名词：<strong>Boss 层</strong> = 每个对手段位的最后一关，对手会更凶，出价更狠、抢得更勤。全程 4 个 Boss 层（第 7、12、17、20 层）。第 20 层是最终 Boss，不再升级，而是直接检验你是否站上胜利线。</span>',
     ],
   },
   {
@@ -84,6 +84,7 @@ export const RULES_PAGES = [
     body: [
       '<strong>赢</strong> 🏆：撑到第 20 层，并且累计收益高过<strong>胜利线</strong>。',
       '<strong>输</strong> 💀：连续亏损踩到阈值，<em>并且</em>累计收益跌破<strong>失败线</strong>——两个条件同时满足才算输。',
+      '如果第 20 层打完仍没站上胜利线，也会直接判负；终局没有无限重刷。',
       '顶部控制台一直挂着这些数：当前层数、Gas Pool、累计收益、胜利线、失败线。盯着它们，在越来越凶的对手手底下活到终局，就赢了。',
     ],
   },
@@ -102,9 +103,9 @@ export const AGENT_GUIDE = {
     name: '🔭 侦察型',
     role: '信息流打法',
     order: 2,
-    summary: '每轮多发机会牌，随等级递增：Lv1 多 1 张、Lv2 多 2 张、Lv3 多 3 张。',
+    summary: '每轮多发机会牌，随等级递增：Lv1 多 1 张、Lv2 多 2 张、Lv3 多 3 张；每多发 1 张会少 25 Gas。',
     withoutIt: '非侦察型角色使用基础发牌数量。',
-    howToUse: '适合“先把牌摊开看清楚再下手”的玩家。代价是要评估更多机会。',
+    howToUse: '适合“先把牌摊开看清楚再下手”的玩家。代价是要评估更多机会，并为额外情报付出 Gas 预算。',
   },
   resist: {
     name: '🛡️ 抗压型',

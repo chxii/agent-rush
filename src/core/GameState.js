@@ -1,6 +1,6 @@
 import { createMemoryStorage } from './storage.js'
 import { WIN_LOSS_CONFIG } from '../config/winloss.js'
-import { getBaseGasPoolForLayer, getRoleBuffs, isValidRole, nextRoleLevel } from './RoleBuffs.js'
+import { getGasPoolForRole, isValidRole, nextRoleLevel } from './RoleBuffs.js'
 
 const STORAGE_KEY = 'agent_rush_v1'
 const SCHEMA_VERSION = 4
@@ -107,9 +107,7 @@ export const GameState = {
   },
 
   gasPoolMaxForStage(layer) {
-    const baseGasPool = getBaseGasPoolForLayer(layer)
-    const buffs = getRoleBuffs(this.role, this.roleLevel)
-    return Math.round(baseGasPool * buffs.gasPoolMultiplier)
+    return getGasPoolForRole(layer, this.role, this.roleLevel)
   },
 
   setRole(role) {

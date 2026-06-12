@@ -9,7 +9,7 @@ import { WIN_LOSS_CONFIG } from '../src/config/winloss.js'
 import { createBattlePlan, validateBattlePlan } from '../src/core/BattlePlan.js'
 import { generateHand } from '../src/core/CardGenerator.js'
 import { RuleDecider } from '../src/core/RuleDecider.js'
-import { getBaseGasPoolForLayer, getRoleBuffs, nextRoleLevel } from '../src/core/RoleBuffs.js'
+import { getGasPoolForRole, nextRoleLevel } from '../src/core/RoleBuffs.js'
 import { createRandomSource } from '../src/core/rng.js'
 import { runSemiLoopExecution } from '../src/core/SemiLoopExecutor.js'
 
@@ -87,7 +87,7 @@ export async function runFullGameSimulation(options = {}) {
 
   for (let layer = fromLayer; layer <= toLayer; layer += 1) {
     const layerSeed = `${seed}:layer:${layer}`
-    const scene = options.scene ?? chooseScene(layer, rng)
+    const scene = options.scene ?? chooseScene(layer, rng, strategy)
     const layerResult = await runLayerSimulation({
       ...options,
       seed: layerSeed,
@@ -117,6 +117,11 @@ export async function runFullGameSimulation(options = {}) {
 
     if (layer === WIN_LOSS_CONFIG.victory.targetLayer && cumulativeProfit > WIN_LOSS_CONFIG.victory.cumulativeProfitGreaterThan) {
       outcome = 'victory'
+      break
+    }
+
+    if (layer === WIN_LOSS_CONFIG.victory.targetLayer) {
+      outcome = 'layer20_fail'
       break
     }
 
@@ -356,7 +361,7 @@ function updateAggregate(target, game) {
 }
 
 function isPassingOutcome(game) {
-  return game.outcome === 'victory' || game.outcome === 'completed_range'
+  return game.outcome === 'victory'
 }
 
 function finalizeAggregateMap(map) {
@@ -484,7 +489,7 @@ function allocationWeight(strategy, card) {
 function gasBudgetMultiplierForStrategy(strategy) {
   if (strategy === 'random') return 0.45
   if (strategy === 'greedy') return 0.45
-  if (strategy === 'balanced') return 0.55
+  if (strategy === 'balanced') return 0.53
   return 1
 }
 
@@ -521,9 +526,14 @@ function safetyScore(card) {
   return Math.max(0, 1 - (card.trueRisk ?? card.displayedRisk ?? 0))
 }
 
-function chooseScene(layer, rng) {
+function chooseScene(layer, rng, strategy = 'balanced') {
   const layerConfig = LAYER_CONFIG[layer] ?? LAYER_CONFIG[20]
   const scenes = layerConfig.scenes ?? [layerConfig.scene]
+  if (strategy === 'expert') {
+    for (const preferred of ['lending', 'dex_arb', 'nft_market', 'new_token']) {
+      if (scenes.includes(preferred)) return preferred
+    }
+  }
   return scenes[Math.floor(rng() * scenes.length)] ?? 'dex_arb'
 }
 
@@ -535,8 +545,7 @@ function maxCardsForLayer(layer, fallback) {
 }
 
 function gasPoolFor(layer, role, roleLevel) {
-  const buffs = getRoleBuffs(role, roleLevel)
-  return Math.round(getBaseGasPoolForLayer(layer) * buffs.gasPoolMultiplier)
+  return getGasPoolForRole(layer, role, roleLevel)
 }
 
 function isBossLayer(layer) {

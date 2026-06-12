@@ -115,6 +115,35 @@ test('ProgressionEngine checks failure after applying round loss', () => {
   }
 })
 
+test('ProgressionEngine ends layer 20 as a loss when victory line is missed', () => {
+  const originalVictory = OverlayManager.showVictory
+  const originalGameOver = OverlayManager.showGameOver
+  const originalLayer20Fail = OverlayManager.showLayer20Fail
+  let finalStats = null
+
+  OverlayManager.showVictory = () => {
+    throw new Error('victory should not trigger')
+  }
+  OverlayManager.showGameOver = () => {
+    throw new Error('consecutive-loss game over should not trigger')
+  }
+  OverlayManager.showLayer20Fail = (stats) => {
+    finalStats = stats
+  }
+
+  try {
+    const gameState = state({ currentLayer: 20, cumulativeProfit: 8, consecutiveLoss: 0 })
+    ProgressionEngine.afterRound({ netProfit: 0.2, cards: [] }, gameState)
+
+    assert.equal(finalStats.cumulativeProfit, 8.2)
+    assert.equal(finalStats.currentLayer, 20)
+  } finally {
+    OverlayManager.showVictory = originalVictory
+    OverlayManager.showGameOver = originalGameOver
+    OverlayManager.showLayer20Fail = originalLayer20Fail
+  }
+})
+
 function state(overrides = {}) {
   return Object.assign(Object.create(GameState), {
     currentLayer: 1,

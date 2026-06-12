@@ -38,3 +38,10 @@ export function getBaseGasPoolForLayer(layer, config = ROLE_CONFIG) {
   const stage = config.base.gasPoolByStage.find((item) => normalizedLayer <= item.maxLayer)
   return stage?.gasPool ?? config.base.gasPoolByStage.at(-1)?.gasPool ?? 0
 }
+
+export function getGasPoolForRole(layer, role, level = 1, config = ROLE_CONFIG) {
+  const baseGasPool = getBaseGasPoolForLayer(layer, config)
+  const buffs = getRoleBuffs(role, level, config)
+  const scoutPenalty = Math.max(0, buffs.scanCardBonus ?? 0) * (config.base.scoutExtraCardGasPenalty ?? 0)
+  return Math.max(0, Math.round(baseGasPool * buffs.gasPoolMultiplier) - scoutPenalty)
+}

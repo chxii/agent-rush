@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { CARD_TYPES, COMPETITION_BY_RARITY, RARITY } from '../src/config/cards.js'
+import { LAYER_CONFIG } from '../src/config/scenes.js'
 
 test('card config can be imported in Node and has the expected shape', () => {
   assert.ok(Array.isArray(CARD_TYPES))
@@ -19,4 +20,13 @@ test('card config can be imported in Node and has the expected shape', () => {
   }
 
   assert.deepEqual(Object.keys(COMPETITION_BY_RARITY).sort(), Object.keys(RARITY).sort())
+})
+
+test('tutorial layers use fixed cards that cover all card types plus a scam example', () => {
+  const tutorialCards = [1, 2, 3].flatMap((layer) => LAYER_CONFIG[layer].tutorialCards ?? [])
+  const types = new Set(tutorialCards.map((card) => card.type))
+
+  for (const type of CARD_TYPES) assert.equal(types.has(type), true, `${type} tutorial coverage`)
+  assert.equal(tutorialCards.some((card) => card.isScam && card.trueRisk > card.displayedRisk), true)
+  assert.equal(LAYER_CONFIG[4].isTutorial, false)
 })

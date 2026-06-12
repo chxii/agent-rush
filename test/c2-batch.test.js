@@ -40,7 +40,7 @@ test('C2 full game simulation advances through layers headlessly', async () => {
   assert.equal(result.status, 'ok')
   assert.ok(result.layersCompleted >= 1)
   assert.ok(result.layersCompleted <= 20)
-  assert.ok(['victory', 'failed', 'completed_range', 'completed_no_victory'].includes(result.outcome))
+  assert.ok(['victory', 'failed', 'completed_range', 'completed_no_victory', 'layer20_fail'].includes(result.outcome))
   assert.equal(result.layers[0].layer, 1)
   assert.equal(result.layers.every((layer) => layer.battlePlan.valid), true)
 })

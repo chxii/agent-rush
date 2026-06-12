@@ -1,6 +1,8 @@
 import { SCENES } from '../config/scenes.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
 import { ROLE_CONFIG } from '../config/roles.js'
+import { calculateBroadcastSuccessProbability } from '../core/ToolSimulator.js'
+import { TOOL_SIMULATOR_CONFIG } from '../config/toolSimulator.js'
 import { calculateWinLossProgress } from '../core/WinLoss.js'
 
 const CARD_TYPE_META = {
@@ -205,7 +207,7 @@ export const UIRenderer = {
               <span class="rarity">${card.rarity}</span>
             </span>
             <strong class="profit-value">${formatEth(card.expectedProfit)}</strong>
-            <span class="metric">Gas ${card.gasCost} Gwei</span>
+            <span class="metric">Gas ${card.gasCost}</span>
             <span class="metric risk-${riskBucket(card.displayedRisk)}">风险 ${riskPercent}%</span>
             <span class="metric">窗口 ${card.timeWindowSec}s</span>
             <span class="reason">${card.riskReason}</span>
@@ -336,9 +338,10 @@ export const UIRenderer = {
     elements.selectionStatus.hidden = false
     elements.selectionStatus.innerHTML = `
       <p class="label">选牌限制</p>
-      <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gwei</strong>
-      <small>剩余 ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gwei</small>
+      <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gas</strong>
+      <small>剩余 ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gas</small>
       ${status.message ? `<span>${status.message}</span>` : ''}
+      ${renderTutorialPanel(status.tutorial)}
     `
   },
 
@@ -403,6 +406,10 @@ export const UIRenderer = {
   onInterventionRequest(callback) {
     interventionRequestCallback = callback
   },
+
+  buildTutorialFeedback(input) {
+    return buildTutorialFeedback(input)
+  },
 }
 
 function collectDecisionInput() {
@@ -439,18 +446,48 @@ function renderDecisionControls(card, gasValue, contingencyValue) {
   `
 }
 
+function renderTutorialPanel(tutorial) {
+  if (!tutorial) return ''
+
+  return `
+    <section class="tutorial-panel">
+      <div class="tutorial-steps">
+        ${['选牌', '分 Gas', '设预案', '执行']
+          .map((step, index) => `<span class="${index <= tutorial.stepIndex ? 'active' : ''}">${index + 1}. ${step}</span>`)
+          .join('')}
+      </div>
+      <strong>${tutorial.title}</strong>
+      <p>${tutorial.body}</p>
+      ${tutorial.cards
+        .map(
+          (item) => `
+            <article class="tutorial-card-note ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
+              <div>
+                <strong>${item.name}</strong>
+                <span>${item.verdict}</span>
+              </div>
+              <small>成功率 ${formatPercent(item.successProbability)} · EV ${formatSignedEth(item.expectedValue)}</small>
+              <p>${item.formula}</p>
+            </article>
+          `,
+        )
+        .join('')}
+    </section>
+  `
+}
+
 function renderPipelineChip(card, index, total) {
   const typeMeta = typeMetaFor(card.type)
   const status = normalizeStatus(card.status)
+  const statusClass = status === 'queued' ? 'pending' : status === 'running' || status === 'incident' ? 'now' : status === 'success' ? 'done' : 'fail'
   return `
-    <button class="pipeline-chip ${typeMeta.className} status-${status}" type="button" data-pipeline-card-id="${card.id}">
-      <span class="pipeline-index">${index + 1}</span>
+    <button class="pipeline-chip pchip ${typeMeta.className} ${statusClass} status-${status}" type="button" data-pipeline-card-id="${card.id}">
+      <span class="dot"></span>
       <span class="pipeline-main">
-        <strong>${typeMeta.label}</strong>
-        <small>${shortId(card.id)}</small>
+        <strong>${typeMeta.label} ${shortId(card.id)}</strong>
+        <small>${statusLabel(status)}</small>
       </span>
-      <span class="pipeline-status">${statusLabel(status)}</span>
-      ${index < total - 1 ? '<span class="pipeline-arrow">→</span>' : ''}
+      ${index < total - 1 ? '<span class="pipeline-arrow parrow">→</span>' : ''}
     </button>
   `
 }
@@ -486,8 +523,83 @@ function renderCurrentBanner(card) {
   return `
     <span class="now-badge">NOW</span>
     <strong class="${typeMeta.className}">${typeMeta.label} · ${shortId(card.id)}</strong>
-    <span>预案 ${contingencyLabel(card.contingency)} · Gas ${card.allocatedGas ?? card.gasCost} Gwei</span>
+    <span class="current-card-meta">预期 ${formatEth(card.expectedProfit)} · 预案 ${contingencyLabel(card.contingency)} · Gas ${card.allocatedGas ?? card.gasCost}</span>
   `
+}
+
+export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], gasAllocations = {}, role, roleLevel }) {
+  if (layer < 1 || layer > 3) return null
+
+  const selectedIds = new Set(selectedCards.map((card) => card.id))
+  const notes = cards.map((card) => {
+    const gas = gasAllocations[card.id] ?? card.gasCost
+    const successProbability = estimateSuccessProbability(card, gas, { layer, role, roleLevel })
+    const expectedValue = expectedValue(card, gas)
+    return {
+      name: `${typeMetaFor(card.type).label} ${shortId(card.id)}`,
+      successProbability,
+      expectedValue,
+      recommended: recommendedTutorialCard(layer, card, expectedValue),
+      avoid: card.isScam || expectedValue < 0,
+      verdict: tutorialVerdict(layer, card, selectedIds.has(card.id), expectedValue),
+      formula: `${card.expectedProfit.toFixed(2)} × (1 - ${formatPercent(card.trueRisk)}) - ${gas}×0.001 = ${formatSignedEth(expectedValue)}`,
+    }
+  })
+
+  const selectedGasChanged = selectedCards.some((card) => (gasAllocations[card.id] ?? card.gasCost) !== card.gasCost)
+  return {
+    stepIndex: selectedCards.length === 0 ? 0 : selectedGasChanged ? 2 : 1,
+    title: tutorialTitle(layer),
+    body: tutorialBody(layer, notes),
+    cards: notes,
+  }
+}
+
+function estimateSuccessProbability(card, gas, context = {}) {
+  const state = {
+    botName: context.layer >= 3 ? 'Bot-404' : null,
+    botStrength: context.layer >= 3 ? 0.15 : 0,
+    roleBuffs: {
+      stealProbabilityMultiplier: 1,
+      replaceRequiredBidMultiplier: 1,
+      replaceSuppressProbabilityBonus: 0,
+    },
+  }
+  return calculateBroadcastSuccessProbability(state, card, gas, { competitorDetected: false }, TOOL_SIMULATOR_CONFIG)
+}
+
+function expectedValue(card, gas) {
+  return roundEth((card.expectedProfit ?? 0) * (1 - (card.trueRisk ?? card.displayedRisk ?? 0)) - gas * TOOL_SIMULATOR_CONFIG.gas.gasToEth)
+}
+
+function recommendedTutorialCard(layer, card, ev) {
+  if (layer === 1) return !card.isScam && card.type === 'arbitrage'
+  if (layer === 2) return card.type === 'sandwich'
+  if (layer === 3) return ev > 0 && card.type === 'arbitrage'
+  return ev > 0
+}
+
+function tutorialVerdict(layer, card, selected, ev) {
+  if (card.isScam) return selected ? '别选：牌面风险低但真实风险极高。' : '排雷：这是骗局牌，别被高利润骗走 Gas。'
+  if (layer === 2 && card.type === 'sandwich') return selected ? '正确：现在调高 Gas 看成功率变化。' : '推荐：夹击最吃 Gas，适合练习溢价。'
+  if (ev < 0) return selected ? '不推荐：算上真实风险和 Gas 后 EV 为负。' : '观察即可：EV 为负，长期会亏。'
+  return selected ? '可以打：风险、Gas 和收益能对上。' : '可选：EV 为正，适合按步骤执行。'
+}
+
+function tutorialTitle(layer) {
+  const titles = {
+    1: '第 1 关：先排雷，再选稳牌',
+    2: '第 2 关：牌型配 Gas',
+    3: '第 3 关：用 EV 做决定',
+  }
+  return titles[layer] ?? ''
+}
+
+function tutorialBody(layer, notes) {
+  if (layer === 1) return '点不同机会牌，比较显示风险和真实 EV。高利润低显示风险不一定安全。'
+  if (layer === 2) return '选中夹击或抢跑后调 Gas，成功率会实时重算。夹击牌从额外 Gas 里吃到的收益最大。'
+  const best = [...notes].sort((a, b) => b.expectedValue - a.expectedValue)[0]
+  return `Bot-404 威胁很低，但仍要按 EV 排序。当前最稳的是 ${best?.name ?? 'EV 为正的牌'}。`
 }
 
 function currentPipelineCard() {
@@ -551,4 +663,17 @@ function formatEth(value) {
 
 function formatUnsignedEth(value) {
   return `${Math.max(0, Number(value) || 0).toFixed(2)} ETH`
+}
+
+function formatSignedEth(value) {
+  const number = Number(value) || 0
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)} ETH`
+}
+
+function formatPercent(value) {
+  return `${Math.round((Number(value) || 0) * 100)}%`
+}
+
+function roundEth(value) {
+  return Math.round(value * 1000) / 1000
 }

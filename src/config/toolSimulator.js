@@ -34,6 +34,9 @@ export const TOOL_SIMULATOR_CONFIG = {
     maxSuccessProbability: 0.9,
     profitVariance: 0.15,
   },
+  boss: {
+    botStrengthBonus: 0.03,
+  },
   replace: {
     requiredBidMultiplier: 1.05,
     baseSuppressProbability: 0.35,

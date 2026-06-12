@@ -186,10 +186,10 @@ export const OverlayManager = {
           render()
         })
       })
-      panel.querySelector('#codex-close').addEventListener('click', () => {
+      panel.querySelectorAll('#codex-close, #codex-close-x').forEach((button) => button.addEventListener('click', () => {
         this.hideCodex()
         onClose()
-      })
+      }))
     }
 
     render()
@@ -200,6 +200,19 @@ export const OverlayManager = {
       '出局 💀',
       `
         <p class="overlay-copy">连亏压力顶到了头——<strong>连续亏损踩线、同时累计收益也跌破了失败线</strong>，两条线一起亮红，这局到此为止。别灰心，换个角色、换套打法，缝还在那儿。</p>
+        ${formatFinalStats(stats)}
+        <button id="restart-game" class="primary-button" type="button">再来一局</button>
+      `,
+    )
+    panel.querySelector('#restart-game').addEventListener('click', onRestart)
+  },
+
+  showLayer20Fail(stats, onRestart) {
+    const profit = Number(stats.cumulativeProfit ?? 0)
+    const panel = showOverlay(
+      '差一口气',
+      `
+        <p class="overlay-copy">你撑到了第 20 层，从 Bot-404 一路杀到 Genesis，但累计收益没能站上胜利线（需 &gt; 8.75 ETH，你只到了 <strong>${profit.toFixed(2)} ETH</strong>）。终局之战，差的不是勇气，是那几笔没抓住的肥肉。换套打法，再来一次。</p>
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
@@ -246,6 +259,7 @@ function showCodexOverlay(title, body) {
   panel.innerHTML = `
     <div class="overlay-dialog codex-dialog">
       <h2>${title}</h2>
+      <button id="codex-close-x" class="codex-close-x" type="button" aria-label="关闭图鉴">×</button>
       ${body}
     </div>
   `
@@ -286,37 +300,45 @@ function formatCodexTab(tab) {
   }
 
   if (tab === 'agents') {
-    return Object.values(AGENT_GUIDE)
+    const entries = Object.values(AGENT_GUIDE)
       .sort((a, b) => a.order - b.order)
       .map(formatAgentEntry)
       .join('')
+    return `${entries}<p class="guide-footnote">角色 buff 整局生效，Boss 层通关还能升级。</p>`
   }
 
-  return Object.values(BOT_GUIDE)
+  const entries = Object.values(BOT_GUIDE)
     .sort((a, b) => a.order - b.order)
     .map(formatBotEntry)
     .join('')
+  return `<p class="overlay-copy">和你抢机会的，是一群越来越强的对手 Bot。段位越靠后，它们越爱压价、越会抢同一笔机会。</p>${entries}`
 }
 
 function formatAgentEntry(agent) {
+  const accent = agentAccent(agent)
   return `
-    <section class="guide-entry">
-      <h3>${agent.name}</h3>
-      <p><strong>定位</strong><span>${agent.role}</span></p>
-      <p><strong>作用</strong><span>${agent.summary}</span></p>
-      <p><strong>没有它会怎样</strong><span>${agent.withoutIt}</span></p>
-      <p><strong>怎么用</strong><span>${agent.howToUse}</span></p>
+    <section class="gentry guide-entry" style="--accent2:${accent}">
+      <div class="gh">
+        <span class="gn">${agent.name}</span>
+        <span class="gtag">${agent.role}</span>
+      </div>
+      <p class="buffline">${agent.summary}</p>
+      <p>${agent.howToUse}</p>
+      <p>${agent.withoutIt}</p>
     </section>
   `
 }
 
 function formatBotEntry(bot) {
+  const threat = threatLevel(bot.threat)
   return `
-    <section class="guide-entry">
-      <h3>${bot.name}</h3>
-      <p><strong>出现层数</strong><span>${bot.layers}</span></p>
-      <p><strong>威胁等级</strong><span class="threat-text">${bot.threat}</span></p>
-      <p><strong>风格</strong><span>${bot.style}</span></p>
+    <section class="gentry guide-entry" style="--accent2:${botAccent(threat)}">
+      <div class="gh">
+        <span class="gn">${bot.name}</span>
+        <span class="gtag">${bot.layers}</span>
+        <span class="gthreat threat-${threat}">威胁 ${bot.threat}</span>
+      </div>
+      <p>${bot.style}</p>
     </section>
   `
 }
@@ -370,6 +392,27 @@ function formatRoleUpgrade(role, roleLevel) {
   }
 
   return `${role.name} 已强化到 Lv.${roleLevel}。${role.buffSummary ?? ''}`
+}
+
+function agentAccent(agent) {
+  if (agent.name.includes('侦察')) return '#2bd98a'
+  if (agent.name.includes('抗压')) return '#4aa8ff'
+  if (agent.name.includes('效率')) return '#ff9d3d'
+  return '#b07cff'
+}
+
+function threatLevel(threat) {
+  return {
+    极低: 1,
+    低: 2,
+    中: 3,
+    高: 4,
+    极高: 5,
+  }[threat] ?? 3
+}
+
+function botAccent(threat) {
+  return ['#7fa39a', '#2bd98a', '#ffc14d', '#ff9d3d', '#ff5d8f'][threat - 1] ?? '#ffc14d'
 }
 
 function escapeHtml(value) {

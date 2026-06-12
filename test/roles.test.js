@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { ROLE_IDS } from '../src/config/roles.js'
 import { generateHand, injectScamCardNextHand } from '../src/core/CardGenerator.js'
 import { GameState } from '../src/core/GameState.js'
+import { getGasPoolForRole } from '../src/core/RoleBuffs.js'
 import { createMemoryStorage } from '../src/core/storage.js'
 import { createToolSimulator } from '../src/core/ToolSimulator.js'
 import { createSequenceRng } from '../src/core/rng.js'
@@ -54,6 +55,32 @@ test('efficiency role raises gas pool cap for the same layer', () => {
   const efficiency = GameState.gasPoolMaxForStage(8)
 
   assert.ok(efficiency > base)
+})
+
+test('scout extra scan cards reduce the layer gas pool budget', () => {
+  const base = getGasPoolForRole(8, ROLE_IDS.RESIST, 1)
+
+  assert.equal(getGasPoolForRole(8, ROLE_IDS.SCOUT, 1), base - 25)
+  assert.equal(getGasPoolForRole(8, ROLE_IDS.SCOUT, 2), base - 50)
+  assert.equal(getGasPoolForRole(8, ROLE_IDS.SCOUT, 3), base - 75)
+})
+
+test('boss layers apply a temporary bot strength bonus', () => {
+  const normal = createToolSimulator({
+    cards: [card()],
+    gasPool: 120,
+    layer: 6,
+    botName: 'Shadow',
+  })
+  const boss = createToolSimulator({
+    cards: [card()],
+    gasPool: 120,
+    layer: 7,
+    botName: 'Shadow',
+  })
+
+  assert.equal(normal.state.baseBotStrength, boss.state.baseBotStrength)
+  assert.ok(boss.state.botStrength > normal.state.botStrength)
 })
 
 test('scam cards remain disguised after risk analyzer removal', () => {

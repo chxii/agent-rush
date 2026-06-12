@@ -100,11 +100,16 @@ export const RoundEngine = {
       this.gameState.currentScene,
       this.gameState.role,
       this.gameState.roleLevel,
-      { seed: this._demoSeed },
+      {
+        seed: this._demoSeed,
+        tutorialCards: LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards,
+      },
     )
 
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
-    if (fixedCards) this.currentHand = this.currentHand.slice(0, fixedCards)
+    if (fixedCards && !LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards) {
+      this.currentHand = this.currentHand.slice(0, fixedCards)
+    }
 
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
@@ -112,6 +117,14 @@ export const RoundEngine = {
       text: `扫描 mempool：第 ${this.gameState.currentLayer} 层${activeBotType ? `，检测到 ${activeBotType}` : ''}`,
       isStreaming: false,
     })
+    if (LAYER_CONFIG[this.gameState.currentLayer]?.isBoss) {
+      ThoughtChainPanel.appendLog({
+        timestampMs: Date.now(),
+        source: 'system',
+        text: bossWarningFor(this.gameState.currentLayer, activeBotType),
+        isStreaming: false,
+      })
+    }
 
     this.currentHand.forEach((_, index) => {
       const timerId = window.setTimeout(() => {
@@ -277,6 +290,7 @@ export const RoundEngine = {
   handleDecisionChange(input = {}) {
     this.updateDecisionDraft(input)
     const selection = this.getSelectionState()
+    selection.tutorial = this.buildTutorialFeedback(selection)
     UIRenderer.setSelectionStatus(selection)
     UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
   },
@@ -315,6 +329,7 @@ export const RoundEngine = {
 
   renderPlayableHand(message = '') {
     const selection = this.getSelectionState(message)
+    selection.tutorial = this.buildTutorialFeedback(selection)
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], {
       phase: 'play',
       constraints: selection,
@@ -332,7 +347,7 @@ export const RoundEngine = {
     }
 
     if (selection.selectedGas + card.gasCost > selection.gasPool) {
-      return { valid: false, message: `Gas 预算不足：还剩 ${selection.gasPool - selection.selectedGas} Gwei。` }
+      return { valid: false, message: `Gas 预算不足：还剩 ${selection.gasPool - selection.selectedGas} Gas。` }
     }
 
     return { valid: true, message: '' }
@@ -358,7 +373,7 @@ export const RoundEngine = {
         return
       }
       if (selectedGas + card.gasCost > gasPool) {
-        disabledReasons[card.id] = `Gas 不足，还剩 ${gasPool - selectedGas} Gwei`
+        disabledReasons[card.id] = `Gas 不足，还剩 ${gasPool - selectedGas} Gas`
       }
     })
 
@@ -440,6 +455,18 @@ export const RoundEngine = {
       source: 'system',
       text: '[Debug] 下一轮扫描将注入一张骗局牌',
       isStreaming: false,
+    })
+  },
+
+  buildTutorialFeedback(selection) {
+    if (!LAYER_CONFIG[this.gameState?.currentLayer]?.isTutorial) return null
+    return UIRenderer.buildTutorialFeedback({
+      layer: this.gameState.currentLayer,
+      cards: this.currentHand,
+      selectedCards: this.getSelectedCards(),
+      gasAllocations: selection.gasAllocations,
+      role: this.gameState.role,
+      roleLevel: this.gameState.roleLevel,
     })
   },
 
@@ -528,4 +555,14 @@ function buildEmergencyResult(cards, error) {
       },
     ],
   }
+}
+
+function bossWarningFor(layer, botName) {
+  const warnings = {
+    7: '⚠️ 段位收尾：Shadow 正在全力封锁这片猎场，这是甩开它的最后机会。',
+    12: '⚠️ 段位收尾：Phantom 的算力碾压上来了，每一笔交易都在它的监视下。',
+    17: '⚠️ 段位收尾：Phantom+ 多线施压，撑过这层你就摸到终局了。',
+    20: '☠️ 最终战：Genesis 出价极凶、永远压不死。这是你证明自己的最后一战。',
+  }
+  return warnings[layer] ?? `⚠️ Boss 关：${botName ?? '未知对手'} 正在加压。`
 }
