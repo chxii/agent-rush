@@ -170,7 +170,7 @@ test('tutorial layer 3 uses scripted decider, forced steal hook, and delay hook'
     await RoundEngine.startExecute()
 
     assert.ok(capturedOptions.decider, 'tutorial execution should pass a scripted decider')
-    assert.equal(capturedOptions.config.toolDelayMs, 1)
+    assert.equal(capturedOptions.config.toolDelayMs, 700)
     assert.equal(typeof capturedOptions.delay, 'function')
     assert.equal(capturedOptions.forceSteal(), true)
     assert.equal(RoundEngine._tutorialExecutionPaused, true)
@@ -419,6 +419,23 @@ test('tutorial shortcut intervention resumes execution without requiring custom 
   }
 })
 
+test('tutorial layer 3 teaches all contingency choices', () => {
+  const originalState = captureRoundEngineState()
+  const queued = []
+
+  try {
+    RoundEngine.queueTutorialLogs = (messages = []) => queued.push(...messages)
+    RoundEngine.gameState = { currentLayer: 3, tutorialSeen: false }
+    RoundEngine.appendTutorialLogs('scan')
+
+    assert.equal(queued.some((line) => line.includes('硬刚') && line.includes('加价')), true)
+    assert.equal(queued.some((line) => line.includes('放弃') && line.includes('止损')), true)
+    assert.equal(queued.some((line) => line.includes('转移') && line.includes('替代机会')), true)
+  } finally {
+    Object.assign(RoundEngine, originalState)
+  }
+})
+
 function captureRoundEngineState() {
   return {
     gameState: RoundEngine.gameState,
@@ -437,6 +454,7 @@ function captureRoundEngineState() {
     _tutorialExecutionResume: RoundEngine._tutorialExecutionResume,
     _tutorialLogQueue: RoundEngine._tutorialLogQueue,
     _tutorialLogTimerId: RoundEngine._tutorialLogTimerId,
+    _tutorialLogIntervalMs: RoundEngine._tutorialLogIntervalMs,
     queueTutorialLogs: RoundEngine.queueTutorialLogs,
   }
 }

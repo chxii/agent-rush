@@ -213,6 +213,10 @@ h3 {
   padding: 0;
 }
 
+.header-grid .stat.scene {
+  min-width: 112px;
+}
+
 .header-grid .stat strong {
   display: block;
   color: var(--text);
@@ -1417,6 +1421,12 @@ code {
   flex: 0 0 auto;
 }
 
+.tutorial-inspection.with-ev-note {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
 .tutorial-inspection-verdict {
   color: var(--muted);
 }
@@ -1432,6 +1442,12 @@ code {
 .tutorial-formula {
   margin-left: auto;
   color: var(--accent);
+}
+
+.tutorial-ev-note {
+  flex-basis: 100%;
+  max-width: 520px;
+  color: var(--muted);
 }
 
 .tutorial-mini-grid,

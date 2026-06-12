@@ -20,6 +20,8 @@ const DEFAULT_INTERVENTION_WINDOW_MS = 60000
 const REVEAL_INTERVAL_MS = 900
 const SCAN_BUFFER_MS = 900
 const TUTORIAL_LOG_INTERVAL_MS = 1200
+const TUTORIAL_LAYER3_LOG_INTERVAL_MS = 1800
+const TUTORIAL_LAYER3_TOOL_DELAY_MS = 700
 const DEMO_SEED = 'agent-rush-c3-demo'
 
 export const RoundEngine = {
@@ -53,6 +55,7 @@ export const RoundEngine = {
   _tutorialLogKeys: new Set(),
   _tutorialLogQueue: [],
   _tutorialLogTimerId: null,
+  _tutorialLogIntervalMs: TUTORIAL_LOG_INTERVAL_MS,
   _tutorialPromptTimerId: null,
   _tutorialClosingLogged: false,
   _roundSeenBots: new Set(),
@@ -79,6 +82,7 @@ export const RoundEngine = {
     this._tutorialLogKeys = new Set()
     this._tutorialLogQueue = []
     this._tutorialLogTimerId = null
+    this._tutorialLogIntervalMs = TUTORIAL_LOG_INTERVAL_MS
     this._tutorialPromptTimerId = null
     this._tutorialClosingLogged = false
     UIRenderer.renderPipeline([])
@@ -223,7 +227,7 @@ export const RoundEngine = {
         forceSteal: createForceStealHook(this),
         seed: this._demoSeed,
         config: this.isTutorialInterventionLayer()
-          ? { toolDelayMs: 1, simulatedToolElapsedSec: 1, maxReplansPerRound: 4 }
+          ? { toolDelayMs: TUTORIAL_LAYER3_TOOL_DELAY_MS, simulatedToolElapsedSec: 1, maxReplansPerRound: 4 }
           : undefined,
         decider: this.isActiveTutorial() ? tutorialLayerDecider : undefined,
         delay: this.isTutorialInterventionLayer() ? () => this.waitForTutorialIntervention() : undefined,
@@ -610,11 +614,12 @@ export const RoundEngine = {
     if (this._tutorialLogKeys.has(key)) return
     this._tutorialLogKeys.add(key)
 
-    this.queueTutorialLogs(TUTORIAL_LOGS[layer]?.[stage] ?? [])
+    this.queueTutorialLogs(TUTORIAL_LOGS[layer]?.[stage] ?? [], tutorialLogIntervalFor(layer, stage))
   },
 
-  queueTutorialLogs(messages = []) {
+  queueTutorialLogs(messages = [], intervalMs = TUTORIAL_LOG_INTERVAL_MS) {
     if (!this.isActiveTutorial() || messages.length === 0) return
+    this._tutorialLogIntervalMs = intervalMs
     this._tutorialLogQueue.push(...messages)
     this.flushNextTutorialLog()
   },
@@ -634,7 +639,7 @@ export const RoundEngine = {
     this._tutorialLogTimerId = window.setTimeout(() => {
       this._tutorialLogTimerId = null
       this.flushNextTutorialLog()
-    }, TUTORIAL_LOG_INTERVAL_MS)
+    }, this._tutorialLogIntervalMs)
   },
 
   handleTutorialCardSelected(card) {
@@ -689,7 +694,7 @@ export const RoundEngine = {
       )
     }
 
-    this.queueTutorialLogs(recapLines)
+    this.queueTutorialLogs(recapLines, layer === 3 ? TUTORIAL_LAYER3_LOG_INTERVAL_MS : TUTORIAL_LOG_INTERVAL_MS)
   },
 
   waitForTutorialIntervention() {
@@ -837,7 +842,10 @@ const TUTORIAL_LOGS = {
       '> 🧪 最后一课，也是最重要的。前两关没人动你，这次来真的。Bot-404 上线了，它要抢一手。',
       '> 🎛️ 这次你可以选 2 张牌一起打。它们共用一个 Gas 池，给一张多喂，另一张就少。',
       '> 🛡️ 选牌时，给每张设一个预案：万一这张被抢了，我要怎么办。',
-      '> 💪🏳️ 给你想保的牌设"硬刚"，给次要的设"放弃"。设好就执行。',
+      '> 💪 硬刚：被抢就加价抢回，适合你最想保、价值高、值得砸 Gas 的牌。',
+      '> 🏳️ 放弃：被抢就止损撤出，保住 Gas，适合次要的、不值得继续砸的牌。',
+      '> 🔁 转移：被抢就去找替代机会，适合这张没了但还有别的可打的情况。',
+      '> 👉 给想保的牌设"硬刚"，给次要的设"放弃"，不确定时可以试试"转移"。设好就执行。',
     ],
     execute: [
       '> 🔁 注意看执行顺序。是我，Executor，排的，不是你选牌的顺序。我默认优先打更有价值的牌。',
@@ -1038,6 +1046,11 @@ function appendTutorLog(text) {
     text,
     isStreaming: false,
   })
+}
+
+function tutorialLogIntervalFor(layer, stage) {
+  if (layer === 3 && (stage === 'execute' || stage === 'stolen')) return TUTORIAL_LAYER3_LOG_INTERVAL_MS
+  return TUTORIAL_LOG_INTERVAL_MS
 }
 
 function applySkipPenalty(roundResult) {

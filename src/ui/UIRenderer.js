@@ -1,5 +1,6 @@
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
 import { ROLE_CONFIG } from '../config/roles.js'
+import { SCENES } from '../config/scenes.js'
 import { calculateBroadcastSuccessProbability } from '../core/ToolSimulator.js'
 import { TOOL_SIMULATOR_CONFIG } from '../config/toolSimulator.js'
 import { calculateWinLossProgress } from '../core/WinLoss.js'
@@ -33,6 +34,7 @@ const CARD_TYPE_META = {
 }
 
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'abandoned'])
+const TUTORIAL_EV_EXPLANATION = 'EV 用基础风险估长期值；成功率是这把的实时概率，会随 Gas 和竞争变化。这是游戏把“牌值”和“能不能成交”拆开教学。'
 
 const elements = {
   header: null,
@@ -168,10 +170,15 @@ export const UIRenderer = {
 
   renderHeader(gameState) {
     const progress = calculateWinLossProgress(gameState)
+    const sceneName = SCENES[gameState.currentScene]?.name ?? gameState.currentScene ?? '未知场景'
     elements.header.innerHTML = `
       <div class="stat">
         <p class="label">层数</p>
         <strong>${gameState.currentLayer} / ${progress.victory.targetLayer}</strong>
+      </div>
+      <div class="stat scene">
+        <p class="label">场景</p>
+        <strong>${sceneName}</strong>
       </div>
       <div class="stat">
         <p class="label">Gas 池</p>
@@ -289,13 +296,7 @@ export const UIRenderer = {
   },
 
   updatePipelineCard(cardId, updates = {}) {
-    pipelineState = pipelineState.map((card) => {
-      if (card.id !== cardId) {
-        if (card.status === 'running') return { ...card, status: 'queued' }
-        return card
-      }
-      return { ...card, ...updates }
-    })
+    pipelineState = updatePipelineStateForCard(pipelineState, cardId, updates)
     this.renderPipeline()
   },
 
@@ -547,12 +548,13 @@ function renderTutorialInspection(tutorial) {
 
   const item = selected[0]
   return `
-    <div class="tutorial-inspection ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
+    <div class="tutorial-inspection ${tutorial.layer === 2 ? 'with-ev-note' : ''} ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
       <span>${tutorialVerdictIcon(item)} ${item.typeLabel} · ${item.shortId}</span>
       <span>成功率 ${formatPercent(item.successProbability)}</span>
       <span>EV ${formatSignedEth(item.expectedValue)}</span>
       <span class="tutorial-inspection-verdict">${item.verdict}</span>
       ${tutorial.layer === 2 ? `<span class="tutorial-formula">${item.formula}</span>` : ''}
+      ${tutorial.layer === 2 ? `<span class="tutorial-ev-note">${tutorial.evExplanation}</span>` : ''}
     </div>
   `
 }
@@ -625,6 +627,7 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
   return {
     layer,
     cards: notes,
+    evExplanation: layer === 2 ? TUTORIAL_EV_EXPLANATION : '',
   }
 }
 
@@ -718,9 +721,23 @@ function tutorialVerdictIcon(item) {
 function pipelineStatusLabel(card, status) {
   if (status === 'queued') return '排队中'
   if (status === 'running' || status === 'incident') return '执行中'
-  if (status === 'success' || status === 'failed') return formatSignedEth(card.actualProfit ?? 0)
+  if (status === 'success') return `成 ${formatSignedEth(card.actualProfit ?? 0)}`
+  if (status === 'failed') return `败 ${formatSignedEth(card.actualProfit ?? 0)}`
   return statusLabel(status)
 }
+
+function updatePipelineStateForCard(state = [], cardId, updates = {}) {
+  return state.map((card) => {
+    if (card.id !== cardId) {
+      if (card.status === 'running') return { ...card, status: 'queued' }
+      return card
+    }
+    if (TERMINAL_STATUSES.has(card.status) && !TERMINAL_STATUSES.has(updates.status)) return card
+    return { ...card, ...updates }
+  })
+}
+
+export const __testUpdatePipelineStateForCard = updatePipelineStateForCard
 
 function contingencyLabel(value) {
   const labels = {
