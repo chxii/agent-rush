@@ -20,6 +20,7 @@ export const OverlayManager = {
           </div>
         </div>
       `,
+      { closable: false, initialFocus: '#display-id-input' },
     )
 
     panel.querySelector('#start-game').addEventListener('click', () => {
@@ -52,6 +53,7 @@ export const OverlayManager = {
             </div>
           </div>
         `,
+        { initialFocus: '#welcome-next', onClose: () => finish(onDone) },
       )
 
       panel.querySelector('#welcome-skip').addEventListener('click', () => finish(onDone))
@@ -86,6 +88,7 @@ export const OverlayManager = {
         <div class="bot-intro">${formatBotEntry(bot)}</div>
         <button id="bot-intro-confirm" class="primary-button" type="button">知道了</button>
       `,
+      { initialFocus: '#bot-intro-confirm', onClose: () => finish(onDone) },
     )
 
     panel.querySelector('#bot-intro-confirm').addEventListener('click', () => finish(onDone))
@@ -109,7 +112,7 @@ export const OverlayManager = {
       })
       .join('')
 
-    const panel = showOverlay('选择场景', `${intro}<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择场景', `${intro}<div class="choice-grid">${body}</div>`, { closable: false })
     panel.querySelectorAll('[data-scene-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -135,7 +138,7 @@ export const OverlayManager = {
       )
       .join('')
 
-    const panel = showOverlay('选择起始角色', `${intro}<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择起始角色', `${intro}<div class="choice-grid">${body}</div>`, { closable: false })
     panel.querySelectorAll('[data-role-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -158,6 +161,7 @@ export const OverlayManager = {
         </section>
         <button id="boss-reward-confirm" class="primary-button" type="button">继续</button>
       `,
+      { closable: false, initialFocus: '#boss-reward-confirm' },
     )
     panel.querySelector('#boss-reward-confirm').addEventListener('click', () => {
       this.hideAll()
@@ -181,6 +185,13 @@ export const OverlayManager = {
           <div class="guide-content">${formatCodexTab(activeTab, rulesPageIndex)}</div>
           <button id="codex-close" class="primary-button" type="button">关闭</button>
         `,
+        {
+          initialFocus: '#codex-close',
+          onClose: () => {
+            this.hideCodex()
+            onClose()
+          },
+        },
       )
 
       panel.querySelectorAll('[data-guide-tab]').forEach((button) => {
@@ -215,6 +226,7 @@ export const OverlayManager = {
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
+      { closable: false, initialFocus: '#restart-game' },
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
@@ -228,6 +240,7 @@ export const OverlayManager = {
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
+      { closable: false, initialFocus: '#restart-game' },
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
@@ -240,20 +253,31 @@ export const OverlayManager = {
         ${formatFinalStats(stats)}
         <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
+      { closable: false, initialFocus: '#restart-game' },
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
   },
 
   hideAll() {
-    document.querySelectorAll('.overlay-layer.visible').forEach((panel) => panel.classList.remove('visible'))
+    document.querySelectorAll('.overlay-layer.visible').forEach((panel) => hidePanel(panel))
   },
 
   hideCodex() {
-    document.querySelectorAll('.codex-layer.visible').forEach((panel) => panel.classList.remove('visible'))
+    document.querySelectorAll('.codex-layer.visible').forEach((panel) => hidePanel(panel))
   },
 }
 
-function showOverlay(title, body) {
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+const focusTraps = new WeakMap()
+
+function showOverlay(title, body, options = {}) {
   const panel = getOverlay()
   OverlayManager.hideAll()
   panel.innerHTML = `
@@ -263,10 +287,15 @@ function showOverlay(title, body) {
     </div>
   `
   panel.classList.add('visible')
+  activateFocusTrap(panel, {
+    closable: options.closable,
+    initialFocus: options.initialFocus,
+    onClose: options.onClose ?? (() => OverlayManager.hideAll()),
+  })
   return panel
 }
 
-function showCodexOverlay(title, body) {
+function showCodexOverlay(title, body, options = {}) {
   const panel = getCodexOverlay()
   panel.innerHTML = `
     <div class="overlay-dialog codex-dialog">
@@ -276,6 +305,11 @@ function showCodexOverlay(title, body) {
     </div>
   `
   panel.classList.add('visible')
+  activateFocusTrap(panel, {
+    closable: options.closable,
+    initialFocus: options.initialFocus,
+    onClose: options.onClose ?? (() => OverlayManager.hideCodex()),
+  })
   return panel
 }
 
@@ -304,6 +338,76 @@ function getCodexOverlay() {
     document.body.append(panel)
   }
   return panel
+}
+
+function hidePanel(panel) {
+  panel.classList.remove('visible')
+  deactivateFocusTrap(panel)
+}
+
+function activateFocusTrap(panel, options = {}) {
+  const existing = focusTraps.get(panel)
+  const previousActive = existing?.previousActive ?? document.activeElement
+  if (existing?.onKeyDown) panel.removeEventListener('keydown', existing.onKeyDown)
+
+  const trap = {
+    previousActive,
+    onKeyDown(event) {
+      if (!panel.classList.contains('visible')) return
+
+      if (event.key === 'Escape' && options.closable !== false) {
+        event.preventDefault()
+        options.onClose?.()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+      const focusable = getFocusable(panel)
+      if (focusable.length === 0) {
+        event.preventDefault()
+        panel.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    },
+  }
+
+  panel.addEventListener('keydown', trap.onKeyDown)
+  focusTraps.set(panel, trap)
+
+  window.requestAnimationFrame(() => {
+    const preferred = options.initialFocus ? panel.querySelector(options.initialFocus) : null
+    const target = preferred ?? getFocusable(panel)[0] ?? panel.querySelector('.overlay-dialog') ?? panel
+    if (!target.hasAttribute('tabindex') && !target.matches(FOCUSABLE_SELECTOR)) target.setAttribute('tabindex', '-1')
+    target.focus({ preventScroll: true })
+  })
+}
+
+function deactivateFocusTrap(panel) {
+  const trap = focusTraps.get(panel)
+  if (!trap) return
+  panel.removeEventListener('keydown', trap.onKeyDown)
+  focusTraps.delete(panel)
+
+  if (trap.previousActive && typeof trap.previousActive.focus === 'function' && document.contains(trap.previousActive)) {
+    trap.previousActive.focus({ preventScroll: true })
+  }
+}
+
+function getFocusable(panel) {
+  return [...panel.querySelectorAll(FOCUSABLE_SELECTOR)].filter((element) => {
+    if (element.disabled || element.getAttribute('aria-hidden') === 'true') return false
+    return Boolean(element.offsetParent || element.getClientRects().length)
+  })
 }
 
 function formatCodexTab(tab, rulesPageIndex = 0) {

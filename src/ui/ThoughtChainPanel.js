@@ -136,6 +136,7 @@ function getCardBody(cardId, title = cardId) {
   }
 
   const meta = cardMeta.get(cardId)
+  panel.querySelector('.thought-placeholder')?.remove()
   const section = document.createElement('section')
   section.className = `thought-card is-active ${meta ? `type-${meta.type.replaceAll('_', '-')}` : ''}`
   section.dataset.cardId = cardId

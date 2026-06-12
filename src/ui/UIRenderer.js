@@ -171,30 +171,33 @@ export const UIRenderer = {
   renderHeader(gameState) {
     const progress = calculateWinLossProgress(gameState)
     const sceneName = SCENES[gameState.currentScene]?.name ?? gameState.currentScene ?? '未知场景'
+    const consecutiveLoss = progress.failure.consecutiveLoss
+    const consecutiveLossThreshold = progress.failure.consecutiveLossThreshold
+    const lossIsCritical = consecutiveLossThreshold > 0 && consecutiveLoss >= Math.max(1, consecutiveLossThreshold - 1)
     elements.header.innerHTML = `
-      <div class="stat">
+      <div class="stat core">
         <p class="label">层数</p>
         <strong>${gameState.currentLayer} / ${progress.victory.targetLayer}</strong>
       </div>
-      <div class="stat scene">
+      <div class="stat scene reference">
         <p class="label">场景</p>
         <strong>${sceneName}</strong>
       </div>
-      <div class="stat">
+      <div class="stat core">
         <p class="label">Gas 池</p>
         <strong>${gameState.gasPool} / ${gameState.gasPoolMax}</strong>
       </div>
-      <div class="stat win">
+      <div class="stat win core">
         <p class="label">收益</p>
         <strong>${formatEth(gameState.cumulativeProfit)}</strong>
       </div>
-      <div class="stat win">
+      <div class="stat win reference">
         <p class="label">胜利线</p>
         <strong>还差 ${formatUnsignedEth(progress.victory.profitRemaining)}</strong>
       </div>
-      <div class="stat danger">
+      <div class="stat danger ${lossIsCritical ? 'is-critical' : ''}">
         <p class="label">连续</p>
-        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold}</strong>
+        <strong>${consecutiveLoss} / ${consecutiveLossThreshold}</strong>
       </div>
     `
 
@@ -359,7 +362,10 @@ export const UIRenderer = {
       </section>
     `
 
-    if (elements.thoughtArea) elements.thoughtArea.hidden = false
+    if (elements.thoughtArea) {
+      elements.thoughtArea.hidden = false
+      if (!elements.thoughtArea.innerHTML.trim()) elements.thoughtArea.innerHTML = renderThoughtPlaceholder()
+    }
 
     animatePipelineMove(previousPositions)
   },
@@ -429,9 +435,10 @@ export const UIRenderer = {
     const formDisabled = (state.used || state.pending) && !state.allowCustomPrompt
     const shortcutsDisabled = state.used || state.pending
     const countdown = Number.isFinite(Number(state.remainingSec)) ? ` · 剩 ${Math.max(0, Number(state.remainingSec))}s` : ''
+    const progress = interventionProgress(state)
     elements.interventionPanel.hidden = false
     elements.interventionPanel.innerHTML = `
-      ${state.canSkip ? `<div class="intervention-window-status"><span>⚠ 可干预${countdown}</span><button class="secondary-button" type="button" data-intervention-skip>跳过</button></div>` : ''}
+      ${state.canSkip ? `<div class="intervention-window-status"><div><span>⚠ 可干预${countdown}</span>${progress}</div><button class="secondary-button" type="button" data-intervention-skip>跳过</button></div>` : ''}
       <form class="intervention-form">
         <label>
           <span class="label">⚡ 干预</span>
@@ -567,14 +574,41 @@ function renderPipelineChip(card) {
   const typeMeta = typeMetaFor(card.type)
   const status = normalizeStatus(card.status)
   const statusClass = status === 'queued' ? 'pending' : status === 'running' || status === 'incident' ? 'now' : status === 'success' ? 'done' : 'fail'
+  const label = `${typeMeta.label} ${shortId(card.id)}`
+  const statusLabel = pipelineStatusLabel(card, status)
+  const hint = `查看 ${label} 的执行思路：${statusLabel}`
   return `
-    <button class="pipeline-chip pchip ${typeMeta.className} ${statusClass} status-${status}" type="button" data-pipeline-card-id="${card.id}">
+    <button class="pipeline-chip pchip ${typeMeta.className} ${statusClass} status-${status}" type="button" data-pipeline-card-id="${card.id}" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}">
       <span class="dot"></span>
       <span class="pipeline-main">
-        <strong>${typeMeta.label} ${shortId(card.id)}</strong>
-        <small>${pipelineStatusLabel(card, status)}</small>
+        <strong>${label}</strong>
+        <small>${statusLabel}</small>
       </span>
     </button>
+  `
+}
+
+function renderThoughtPlaceholder() {
+  return `
+    <div class="thought-placeholder" aria-live="polite">
+      <span class="trace-badge">TRACE</span>
+      <strong>Executor thinking</strong>
+      <p>正在拆解执行顺序、工具调用和临场预案。</p>
+      <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+  `
+}
+
+function interventionProgress(state = {}) {
+  const total = Number(state.windowTotalSec)
+  const remaining = Number(state.remainingSec)
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(remaining)) return ''
+
+  const percent = Math.max(0, Math.min(100, (remaining / total) * 100))
+  return `
+    <span class="intervention-progress" aria-hidden="true">
+      <span style="width:${percent.toFixed(1)}%"></span>
+    </span>
   `
 }
 
@@ -774,4 +808,13 @@ function formatPercent(value) {
 
 function roundEth(value) {
   return Math.round(value * 1000) / 1000
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

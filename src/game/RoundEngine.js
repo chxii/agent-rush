@@ -46,6 +46,7 @@ export const RoundEngine = {
   _interventionWindowIntervalId: null,
   _interventionWindowResolve: null,
   _interventionWindowEndAt: 0,
+  _interventionWindowDurationMs: 0,
   _interventionWindowSkipped: false,
   _settlementReady: false,
   _tutorialExecutionPaused: false,
@@ -440,6 +441,7 @@ export const RoundEngine = {
       canSkip: Boolean(this._interventionWindowResolve),
       skipped: this._interventionWindowSkipped,
       remainingSec: this._interventionWindowEndAt ? Math.max(0, Math.ceil((this._interventionWindowEndAt - Date.now()) / 1000)) : null,
+      windowTotalSec: this._interventionWindowDurationMs ? Math.ceil(this._interventionWindowDurationMs / 1000) : null,
       message,
     })
   },
@@ -718,6 +720,7 @@ export const RoundEngine = {
     this._interventionOpen = true
     this._interventionWindowSkipped = false
     this._interventionWindowEndAt = Date.now() + durationMs
+    this._interventionWindowDurationMs = durationMs
 
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
@@ -752,6 +755,7 @@ export const RoundEngine = {
     this._interventionWindowIntervalId = null
     this._interventionWindowResolve = null
     this._interventionWindowEndAt = 0
+    this._interventionWindowDurationMs = 0
     this._interventionWindowSkipped = false
   },
 
