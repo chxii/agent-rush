@@ -3,8 +3,8 @@ import { SchemaValidator } from './SchemaValidator.js'
 import { ThoughtChainPanel } from '../ui/ThoughtChainPanel.js'
 import { LLM_CONFIG } from '../config/llm.js'
 
-const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
-const DEFAULT_MODEL = 'glm-4-flash'
+const DEFAULT_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
+const DEFAULT_MODEL = 'glm-5.1'
 const CACHE_LIMIT = 50
 const STREAM_DELAY_MIN_MS = 20
 const STREAM_DELAY_MAX_MS = 30
@@ -54,7 +54,7 @@ export const ExecutorAI = {
   _useMock: true,
 
   init() {
-    this._useMock = !window.GLM_API_KEY
+    this._useMock = !isProxyMode() && !window.GLM_API_KEY
 
     if (this._useMock) {
       console.warn('[ExecutorAI] GLM_API_KEY not found. Switching to Mock mode.')
@@ -378,14 +378,12 @@ async function readStreamChunk(reader) {
 async function fetchWithTimeout(stream, callType, input) {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), LLM_CONFIG.requestTimeoutMs)
+  const target = getRequestTarget()
 
   try {
-    const response = await fetch(`${getBaseUrl()}/chat/completions`, {
+    const response = await fetch(target.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${window.GLM_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: target.headers,
       body: JSON.stringify({
         model: getModel(),
         messages: [
@@ -658,6 +656,29 @@ async function streamText(text, onChunk) {
 
 function getBaseUrl() {
   return (window.GLM_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '')
+}
+
+function getRequestTarget() {
+  if (isProxyMode()) {
+    return {
+      url: window.LLM_PROXY_URL,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  }
+
+  return {
+    url: `${getBaseUrl()}/chat/completions`,
+    headers: {
+      Authorization: `Bearer ${window.GLM_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  }
+}
+
+function isProxyMode() {
+  return Boolean(window.LLM_PROXY_URL)
 }
 
 function getModel() {
