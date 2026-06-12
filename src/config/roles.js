@@ -10,12 +10,13 @@ export const ROLE_CONFIG = {
     scanCardCount: 3,
     maxScanCardCount: 6,
     gasPoolByStage: [
-      { maxLayer: 4, gasPool: 150 },
+      { maxLayer: 3, gasPool: 150 },
       { maxLayer: 7, gasPool: 200 },
       { maxLayer: 12, gasPool: 250 },
       { maxLayer: 17, gasPool: 300 },
       { maxLayer: 20, gasPool: 350 },
     ],
+    scoutExtraCardGasPenalty: 25,
     gasPoolMultiplier: 1,
     stealProbabilityMultiplier: 1,
     replaceRequiredBidMultiplier: 1,
@@ -30,8 +31,8 @@ export const ROLE_CONFIG = {
       buffSummary: '随档位每轮额外发 1/2/3 张机会牌。',
       levels: {
         1: { scanCardBonus: 1 },
-        2: { scanCardBonus: 1 },
-        3: { scanCardBonus: 1 },
+        2: { scanCardBonus: 2 },
+        3: { scanCardBonus: 3 },
       },
     },
     [ROLE_IDS.RESIST]: {
@@ -51,7 +52,7 @@ export const ROLE_CONFIG = {
       name: '效率型',
       tagline: '资源优势',
       description: '提高每层 Gas Pool 上限，适合同时推进更多机会。',
-      buffSummary: '随档位提高 15%/25%/35% Gas Pool 上限。',
+      buffSummary: '随档位提高 20%/35%/50% Gas Pool 上限。',
       levels: {
         1: { gasPoolMultiplier: 1.2 },
         2: { gasPoolMultiplier: 1.35 },

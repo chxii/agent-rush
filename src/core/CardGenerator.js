@@ -7,6 +7,10 @@ let forceScamNextHand = false
 
 export function generateHand(scene, role, roleLevel, options = {}) {
   const rng = options.rng ?? createRandomSource(options.seed)
+  if (Array.isArray(options.tutorialCards) && options.tutorialCards.length > 0) {
+    return options.tutorialCards.map((card) => createFixedCard(card))
+  }
+
   let cards = runSearcher(scene, role, roleLevel, rng)
 
   if (forceScamNextHand) {
@@ -15,6 +19,15 @@ export function generateHand(scene, role, roleLevel, options = {}) {
   }
 
   return cards
+}
+
+function createFixedCard(template) {
+  return {
+    isScam: false,
+    status: 'pending',
+    actualProfit: 0,
+    ...template,
+  }
 }
 
 export function injectScamCardNextHand() {

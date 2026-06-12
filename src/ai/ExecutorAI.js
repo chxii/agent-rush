@@ -14,6 +14,7 @@ const SYSTEM_PROMPT = [
   'Return one strict JSON object that matches the requested schema.',
   'Do not wrap the JSON in Markdown or add extra prose.',
   'Use concise Chinese in display fields such as reasoning and summary.',
+  'Keep these terms in English, never translate them: Gas, Gwei, ETH, MEV, mempool, searcher, Executor. For example write "消耗 25 Gas" or "投入 150 Gas", never "耗气25".',
   'Each decision should show task decomposition, multi-step planning, or iterative repair.',
   'Gas is allocated by the player. Never invent or return gas allocations unless the call type explicitly asks for a reallocation after an incident.',
 ].join('\n')

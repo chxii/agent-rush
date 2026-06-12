@@ -1,9 +1,9 @@
 import { createMemoryStorage } from './storage.js'
 import { WIN_LOSS_CONFIG } from '../config/winloss.js'
-import { getBaseGasPoolForLayer, getRoleBuffs, isValidRole, nextRoleLevel } from './RoleBuffs.js'
+import { getGasPoolForRole, isValidRole, nextRoleLevel } from './RoleBuffs.js'
 
 const STORAGE_KEY = 'agent_rush_v1'
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 4
 const LEGACY_UNLOCKED_KEY = `unlocked${'Agents'}`
 const LEGACY_LEVELS_KEY = `agent${'Levels'}`
 const LEGACY_ACTIVE_KEY = `active${'Agents'}`
@@ -21,7 +21,7 @@ const DEFAULT_STATE = {
   // Reserved for a future enemy-learning mock. B3 has no runtime read/write logic for it.
   genesisHistory: { lastTwoRounds: [], boostedType: null },
   tutorialSeen: false,
-  seenBots: [],
+  displayId: 'operator',
 }
 
 export const GameState = {
@@ -35,7 +35,7 @@ export const GameState = {
     const progress = this.loadProgress()
     if (progress) {
       this.tutorialSeen = progress.tutorialSeen
-      this.seenBots = progress.seenBots
+      this.displayId = progress.displayId
     }
 
     this.gasPoolMax = this.gasPoolMaxForStage(this.currentLayer)
@@ -53,7 +53,7 @@ export const GameState = {
       JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
         tutorialSeen: this.tutorialSeen,
-        seenBots: this.seenBots,
+        displayId: this.displayId,
       }),
     )
   },
@@ -69,7 +69,7 @@ export const GameState = {
 
       return {
         tutorialSeen: parsed.tutorialSeen === true,
-        seenBots: Array.isArray(parsed.seenBots) ? parsed.seenBots : [],
+        displayId: sanitizeDisplayId(parsed.displayId),
       }
     } catch (error) {
       console.warn('[GameState] Failed to load progress', error)
@@ -84,7 +84,11 @@ export const GameState = {
   applyRoundResult(netProfit) {
     const normalizedProfit = Number(netProfit) || 0
     this.cumulativeProfit = roundEth(this.cumulativeProfit + normalizedProfit)
-    this.consecutiveLoss = normalizedProfit < 0 ? this.consecutiveLoss + 1 : 0
+    if (normalizedProfit < 0) {
+      this.consecutiveLoss += 1
+    } else if (normalizedProfit > 0) {
+      this.consecutiveLoss = 0
+    }
     this.saveProgress()
   },
 
@@ -103,9 +107,7 @@ export const GameState = {
   },
 
   gasPoolMaxForStage(layer) {
-    const baseGasPool = getBaseGasPoolForLayer(layer)
-    const buffs = getRoleBuffs(this.role, this.roleLevel)
-    return Math.round(baseGasPool * buffs.gasPoolMultiplier)
+    return getGasPoolForRole(layer, this.role, this.roleLevel)
   },
 
   setRole(role) {
@@ -131,15 +133,10 @@ export const GameState = {
     this.saveProgress()
   },
 
-  hasSeenBot(botName) {
-    return this.seenBots.includes(botName)
-  },
-
-  markBotSeen(botName) {
-    if (!this.seenBots.includes(botName)) {
-      this.seenBots.push(botName)
-      this.saveProgress()
-    }
+  setDisplayId(displayId) {
+    this.displayId = sanitizeDisplayId(displayId)
+    this.saveProgress()
+    return this.displayId
   },
 }
 
@@ -154,4 +151,12 @@ function clone(value) {
 
 function roundEth(value) {
   return Math.round(value * 1000) / 1000
+}
+
+function sanitizeDisplayId(value) {
+  const cleaned = String(value ?? 'operator')
+    .trim()
+    .replace(/[^\w-]/g, '')
+    .slice(0, 16)
+  return cleaned || 'operator'
 }

@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Rush - MEV 模拟器</title>
+    <title>Agent Rush - MEV 控制台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="config/env.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ajv@8/dist/ajv.min.js"></script>
@@ -14,26 +17,17 @@
         <div>
           <p class="eyebrow">Agent Rush</p>
           <h1>MEV 执行控制台</h1>
-          <button id="codex-button" class="secondary-button codex-button" type="button">图鉴</button>
+          <button id="codex-button" class="secondary-button codex-button" type="button">游戏规则与图鉴</button>
         </div>
         <div id="header" class="header-grid"></div>
       </section>
 
-      <section class="main-grid">
-        <aside class="side-panel">
-          <h2>角色</h2>
-          <div id="agent-panel" class="agent-list"></div>
-        </aside>
+      <section id="rolestrip" class="rolestrip" aria-live="polite"></section>
 
+      <section class="main-grid">
         <section class="play-surface">
-          <div id="mempool-view" class="mempool-view" aria-label="Mempool stream">
-            <span></span>
-            <span></span>
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
           <div id="hand-area" class="hand-area"></div>
+          <section id="thought-area" class="thought-area" aria-live="polite" hidden></section>
         </section>
 
         <aside id="log-panel" class="log-panel" aria-live="polite"></aside>
@@ -49,10 +43,11 @@
       </section>
 
       <section id="debug-panel" class="debug-panel" style="display:none">
-        <button type="button" onclick="jumpToLayer(10)">跳到层 10 (Demo点)</button>
-        <button type="button" onclick="jumpToLayer(18)">跳到层 18 (Demo点)</button>
-        <button type="button" onclick="injectPhantomSteal()">触发Phantom抢占</button>
+        <button type="button" onclick="jumpToLayer(10)">跳到第 10 层</button>
+        <button type="button" onclick="jumpToLayer(18)">跳到第 18 层</button>
+        <button type="button" onclick="injectPhantomSteal()">触发 Phantom 抢占</button>
         <button type="button" onclick="injectScamCard()">注入骗局牌</button>
+        <button type="button" onclick="toggleDemoSeed()">固定种子 Demo</button>
       </section>
     </main>
 
@@ -63,12 +58,16 @@
       import { ProgressionEngine } from './src/game/ProgressionEngine.js'
       import { UIRenderer } from './src/ui/UIRenderer.js'
       import { OverlayManager } from './src/ui/OverlayManager.js'
+      import { ThoughtChainPanel } from './src/ui/ThoughtChainPanel.js'
       import { ExecutorAI } from './src/ai/ExecutorAI.js'
 
       UIRenderer.init()
       ExecutorAI.init()
       GameState.init({ storage: createBrowserStorage(window.localStorage) })
-      ProgressionEngine.setRoundStarter((gameState) => RoundEngine.startRound(gameState))
+      ThoughtChainPanel.setDisplayId(GameState.displayId)
+      const startRound = (gameState) => RoundEngine.startRound(gameState)
+      startRound.resetRunIntroState = () => RoundEngine.resetRunIntroState()
+      ProgressionEngine.setRoundStarter(startRound)
 
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
       UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
@@ -99,6 +98,7 @@
       window.jumpToLayer = (layer) => RoundEngine.jumpToLayer(layer)
       window.injectPhantomSteal = () => RoundEngine.injectPhantomSteal()
       window.injectScamCard = () => RoundEngine.injectScamCard()
+      window.toggleDemoSeed = () => RoundEngine.toggleDemoSeed()
 
       if (new URLSearchParams(window.location.search).get('debug') === '1') {
         document.querySelector('#debug-panel').style.display = 'flex'

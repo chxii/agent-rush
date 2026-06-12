@@ -52,7 +52,9 @@ export function createToolState(options = {}, config = TOOL_SIMULATOR_CONFIG) {
   const allocationMap = new Map((options.allocations ?? []).map((item) => [item.cardId, item.gas]))
   const layer = clampInt(options.layer ?? 1, 1, 20)
   const botName = options.botName === undefined ? activeBotForLayer(layer) : options.botName
-  const botStrength = BOT_STRENGTH_BY_NAME[botName] ?? 0
+  const isBoss = options.isBoss ?? LAYER_CONFIG[layer]?.isBoss === true
+  const baseBotStrength = BOT_STRENGTH_BY_NAME[botName] ?? 0
+  const botStrength = clamp01(baseBotStrength + (isBoss && botName ? config.boss?.botStrengthBonus ?? 0 : 0))
   const role = options.role ?? null
   const roleLevel = options.roleLevel ?? 1
   const roleBuffs = getRoleBuffs(role, roleLevel)
@@ -64,6 +66,8 @@ export function createToolState(options = {}, config = TOOL_SIMULATOR_CONFIG) {
     roleLevel,
     roleBuffs,
     botName,
+    isBoss,
+    baseBotStrength,
     botStrength,
     gasPool: clampNumber(options.gasPool ?? 0, 0, Number.MAX_SAFE_INTEGER),
     gasUsed: 0,
@@ -455,7 +459,7 @@ function resolveCompetition(state, card, params, rng, config) {
   }
 }
 
-function calculateBroadcastSuccessProbability(state, card, gas, competition, config) {
+export function calculateBroadcastSuccessProbability(state, card, gas, competition = {}, config = TOOL_SIMULATOR_CONFIG) {
   const sensitivity = sensitivityFor(card.type)
   const mechanics = mechanicsFor(card.type)
   const gasRatio = gas / Math.max(card.gasCost ?? gas, 1)

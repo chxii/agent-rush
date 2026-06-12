@@ -1,36 +1,29 @@
 import { SCENES } from '../config/scenes.js'
 import { AGENT_GUIDE, BOT_GUIDE, RULES_PAGES } from '../config/guideContent.js'
 import { ROLE_CONFIG } from '../config/roles.js'
+import { ThoughtChainPanel } from './ThoughtChainPanel.js'
 
 export const OverlayManager = {
   showStartMenu(gameState, onStart) {
-    const role = ROLE_CONFIG.roles[gameState.role]
-    const seenBotCount = gameState.seenBots.length
-
     const panel = showOverlay(
       'Agent Rush',
       `
         <div class="start-menu">
-          <p class="overlay-copy">在链上机会中看牌、分配 Gas、设定预案，并让 Executor 运行半闭环执行。</p>
-          <div class="start-progress">
-            <div>
-              <strong>当前角色</strong>
-              <div class="start-chip-list"><span>${role ? `${role.name} Lv.${gameState.roleLevel}` : '开局选择'}</span></div>
-            </div>
-            <div>
-              <strong>已遭遇对手</strong>
-              <span>${seenBotCount} / ${Object.keys(BOT_GUIDE).length}</span>
-            </div>
-          </div>
+          <p class="overlay-copy">你是一支 MEV 团队的指挥官。你制定战略：挑机会、分资源、定预案、临场改价；你的 AI Executor Agent 自主地、长程地把战略执行下去：它拆解任务、真实调用链上工具、观察结果，在被对手抢占或你改令时迭代修复，最终向你交付这一轮的战果。</p>
+          <label class="display-id-field">
+            <span class="label">显示用 ID</span>
+            <input id="display-id-input" type="text" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" value="${escapeHtml(gameState.displayId ?? 'operator')}" placeholder="operator">
+          </label>
           <div class="start-actions">
             <button id="start-game" class="primary-button" type="button">开始游戏</button>
-            <button id="start-codex" class="secondary-button" type="button">图鉴</button>
+            <button id="start-codex" class="secondary-button" type="button">游戏规则与图鉴</button>
           </div>
         </div>
       `,
     )
 
     panel.querySelector('#start-game').addEventListener('click', () => {
+      ThoughtChainPanel.setDisplayId(gameState.setDisplayId(panel.querySelector('#display-id-input')?.value))
       this.hideAll()
       onStart()
     })
@@ -49,7 +42,7 @@ export const OverlayManager = {
         `
           <div class="guide-copy">${formatParagraphs(page.body)}</div>
           <div class="guide-pager">
-            <button id="welcome-skip" class="secondary-button" type="button">跳过</button>
+            <button id="welcome-skip" class="secondary-button" type="button">关闭</button>
             <span>${pageIndex + 1} / ${RULES_PAGES.length}</span>
             <div class="guide-pager-actions">
               <button id="welcome-prev" class="secondary-button" type="button" ${pageIndex === 0 ? 'disabled' : ''}>上一页</button>
@@ -103,11 +96,14 @@ export const OverlayManager = {
   },
 
   showSceneSelect(availableScenes, onSelect) {
+    const intro = `
+      <p class="overlay-copy">不同的“猎场”机会不一样：有的稳、骗局少；有的野、骗局多但大牌也多。还要留意每个场景常驻的对手是谁。挑一个你这一层想下的赌注。</p>
+    `
     const body = availableScenes
       .map((sceneId) => {
         const scene = SCENES[sceneId]
         return `
-          <button class="choice-card" data-scene-id="${sceneId}" type="button">
+          <button class="choice-card scene-${sceneId}" data-scene-id="${sceneId}" type="button">
             <strong>${scene.name}</strong>
             <span>${scene.styleHint}</span>
             <span>骗局率 ${(scene.scamRate * 100).toFixed(0)}%</span>
@@ -117,7 +113,7 @@ export const OverlayManager = {
       })
       .join('')
 
-    const panel = showOverlay('选择场景', `<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择场景', `${intro}<div class="choice-grid">${body}</div>`)
     panel.querySelectorAll('[data-scene-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -127,6 +123,9 @@ export const OverlayManager = {
   },
 
   showRoleSelect(roles, onSelect) {
+    const intro = `
+      <p class="overlay-copy">先定一个打法：多看牌的信息流、扛得住抢的硬派，或家底厚的资源派。整局都会跟着你，选一个合你胃口的开打。</p>
+    `
     const body = Object.values(roles)
       .map(
         (role) => `
@@ -140,7 +139,7 @@ export const OverlayManager = {
       )
       .join('')
 
-    const panel = showOverlay('选择起始角色', `<div class="choice-grid">${body}</div>`)
+    const panel = showOverlay('选择起始角色', `${intro}<div class="choice-grid">${body}</div>`)
     panel.querySelectorAll('[data-role-id]').forEach((button) => {
       button.addEventListener('click', () => {
         this.hideAll()
@@ -154,8 +153,7 @@ export const OverlayManager = {
     const panel = showOverlay(
       'Boss 奖励',
       `
-        <p class="overlay-copy">${role?.name ?? '角色'} 已强化到 Lv.${roleLevel}。</p>
-        <p class="overlay-copy">${role?.buffSummary ?? '当前角色 buff 已强化。'}</p>
+        <p class="overlay-copy">${formatRoleUpgrade(role, roleLevel)}</p>
         <button id="boss-reward-confirm" class="primary-button" type="button">继续</button>
       `,
     )
@@ -170,7 +168,7 @@ export const OverlayManager = {
 
     const render = () => {
       const panel = showCodexOverlay(
-        '图鉴',
+        '游戏规则与图鉴',
         `
           <div class="guide-tabs">
             <button data-guide-tab="rules" class="${activeTab === 'rules' ? 'active' : ''}" type="button">规则</button>
@@ -188,10 +186,10 @@ export const OverlayManager = {
           render()
         })
       })
-      panel.querySelector('#codex-close').addEventListener('click', () => {
+      panel.querySelectorAll('#codex-close, #codex-close-x').forEach((button) => button.addEventListener('click', () => {
         this.hideCodex()
         onClose()
-      })
+      }))
     }
 
     render()
@@ -199,11 +197,24 @@ export const OverlayManager = {
 
   showGameOver(stats, onRestart) {
     const panel = showOverlay(
-      '游戏结束',
+      '出局 💀',
       `
-        <p class="overlay-copy">连亏压力已经触发失败线。重新开始后可以再次选择起始角色。</p>
+        <p class="overlay-copy">连亏压力顶到了头——<strong>连续亏损踩线、同时累计收益也跌破了失败线</strong>，两条线一起亮红，这局到此为止。别灰心，换个角色、换套打法，缝还在那儿。</p>
         ${formatFinalStats(stats)}
-        <button id="restart-game" class="primary-button" type="button">重新开始</button>
+        <button id="restart-game" class="primary-button" type="button">再来一局</button>
+      `,
+    )
+    panel.querySelector('#restart-game').addEventListener('click', onRestart)
+  },
+
+  showLayer20Fail(stats, onRestart) {
+    const profit = Number(stats.cumulativeProfit ?? 0)
+    const panel = showOverlay(
+      '差一口气',
+      `
+        <p class="overlay-copy">你撑到了第 20 层，从 Bot-404 一路杀到 Genesis，但累计收益没能站上胜利线（需 &gt; 8.75 ETH，你只到了 <strong>${profit.toFixed(2)} ETH</strong>）。终局之战，差的不是勇气，是那几笔没抓住的肥肉。换套打法，再来一次。</p>
+        ${formatFinalStats(stats)}
+        <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
@@ -211,11 +222,11 @@ export const OverlayManager = {
 
   showVictory(stats, onRestart) {
     const panel = showOverlay(
-      '胜利',
+      '收网成功 🏆',
       `
-        <p class="overlay-copy">已打通第 20 层，累计收益 ${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH。</p>
+        <p class="overlay-copy">你带着 Executor 一路杀穿 20 层，从 Bot-404 摸到 Genesis，累计净赚 <strong>${Number(stats.cumulativeProfit ?? 0).toFixed(2)} ETH</strong>，稳稳站上了胜利线。这条链上的缝，被你薅明白了。</p>
         ${formatFinalStats(stats)}
-        <button id="restart-game" class="primary-button" type="button">重新开始</button>
+        <button id="restart-game" class="primary-button" type="button">再来一局</button>
       `,
     )
     panel.querySelector('#restart-game').addEventListener('click', onRestart)
@@ -248,6 +259,7 @@ function showCodexOverlay(title, body) {
   panel.innerHTML = `
     <div class="overlay-dialog codex-dialog">
       <h2>${title}</h2>
+      <button id="codex-close-x" class="codex-close-x" type="button" aria-label="关闭图鉴">×</button>
       ${body}
     </div>
   `
@@ -288,37 +300,45 @@ function formatCodexTab(tab) {
   }
 
   if (tab === 'agents') {
-    return Object.values(AGENT_GUIDE)
+    const entries = Object.values(AGENT_GUIDE)
       .sort((a, b) => a.order - b.order)
       .map(formatAgentEntry)
       .join('')
+    return `${entries}<p class="guide-footnote">角色 buff 整局生效，Boss 层通关还能升级。</p>`
   }
 
-  return Object.values(BOT_GUIDE)
+  const entries = Object.values(BOT_GUIDE)
     .sort((a, b) => a.order - b.order)
     .map(formatBotEntry)
     .join('')
+  return `<p class="overlay-copy">和你抢机会的，是一群越来越强的对手 Bot。段位越靠后，它们越爱压价、越会抢同一笔机会。</p>${entries}`
 }
 
 function formatAgentEntry(agent) {
+  const accent = agentAccent(agent)
   return `
-    <section class="guide-entry">
-      <h3>${agent.name}</h3>
-      <p><strong>定位</strong><span>${agent.role}</span></p>
-      <p><strong>作用</strong><span>${agent.summary}</span></p>
-      <p><strong>没有它会怎样</strong><span>${agent.withoutIt}</span></p>
-      <p><strong>怎么用</strong><span>${agent.howToUse}</span></p>
+    <section class="gentry guide-entry" style="--accent2:${accent}">
+      <div class="gh">
+        <span class="gn">${agent.name}</span>
+        <span class="gtag">${agent.role}</span>
+      </div>
+      <p class="buffline">${agent.summary}</p>
+      <p>${agent.howToUse}</p>
+      <p>${agent.withoutIt}</p>
     </section>
   `
 }
 
 function formatBotEntry(bot) {
+  const threat = threatLevel(bot.threat)
   return `
-    <section class="guide-entry">
-      <h3>${bot.name}</h3>
-      <p><strong>出现层数</strong><span>${bot.layers}</span></p>
-      <p><strong>威胁等级</strong><span class="threat-text">${bot.threat}</span></p>
-      <p><strong>风格</strong><span>${bot.style}</span></p>
+    <section class="gentry guide-entry" style="--accent2:${botAccent(threat)}">
+      <div class="gh">
+        <span class="gn">${bot.name}</span>
+        <span class="gtag">${bot.layers}</span>
+        <span class="gthreat threat-${threat}">威胁 ${bot.threat}</span>
+      </div>
+      <p>${bot.style}</p>
     </section>
   `
 }
@@ -339,7 +359,7 @@ function formatFinalStats(stats = {}) {
         <span>${formatSignedEth(stats.cumulativeProfit)}</span>
       </div>
       <div>
-        <strong>连亏次数</strong>
+        <strong>连续亏损</strong>
         <span>${Math.max(0, Math.round(Number(stats.consecutiveLoss) || 0))}</span>
       </div>
     </div>
@@ -349,4 +369,57 @@ function formatFinalStats(stats = {}) {
 function formatSignedEth(value) {
   const number = Number(value) || 0
   return `${number >= 0 ? '+' : ''}${number.toFixed(3)} ETH`
+}
+
+function formatRoleUpgrade(role, roleLevel) {
+  if (!role) return `角色已强化到 Lv.${roleLevel}。`
+
+  const level = role.levels?.[roleLevel] ?? {}
+  if (role.id === 'scout') {
+    return `${role.name} 升到 Lv.${roleLevel}：每轮现在多发 <strong>${level.scanCardBonus ?? 1}</strong> 张机会牌。`
+  }
+
+  if (role.id === 'resist') {
+    const steal = Math.round((level.stealProbabilityMultiplier ?? 1) * 100)
+    const bid = Math.round((level.replaceRequiredBidMultiplier ?? 1) * 100)
+    const bonus = Math.round((level.replaceSuppressProbabilityBonus ?? 0) * 100)
+    return `${role.name} 升到 Lv.${roleLevel}：被抢概率降到约 <strong>${steal}%</strong>，反抢出价约 <strong>${bid}%</strong>，成功率额外 +<strong>${bonus}%</strong>。`
+  }
+
+  if (role.id === 'efficiency') {
+    const bonus = Math.round(((level.gasPoolMultiplier ?? 1) - 1) * 100)
+    return `${role.name} 升到 Lv.${roleLevel}：Gas Pool 上限 +<strong>${bonus}%</strong>。`
+  }
+
+  return `${role.name} 已强化到 Lv.${roleLevel}。${role.buffSummary ?? ''}`
+}
+
+function agentAccent(agent) {
+  if (agent.name.includes('侦察')) return '#2bd98a'
+  if (agent.name.includes('抗压')) return '#4aa8ff'
+  if (agent.name.includes('效率')) return '#ff9d3d'
+  return '#b07cff'
+}
+
+function threatLevel(threat) {
+  return {
+    极低: 1,
+    低: 2,
+    中: 3,
+    高: 4,
+    极高: 5,
+  }[threat] ?? 3
+}
+
+function botAccent(threat) {
+  return ['#7fa39a', '#2bd98a', '#ffc14d', '#ff9d3d', '#ff5d8f'][threat - 1] ?? '#ffc14d'
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

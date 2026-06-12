@@ -79,7 +79,7 @@ function formatSummary(roundResult) {
       <p>${roundResult.aiSummary ?? humanRoundSummary(roundResult)}</p>
       <div class="settlement-total">
         <span>本轮净收益 ${formatSignedEth(roundResult.netProfit)}</span>
-        <span>Gas 使用 ${roundResult.gasUsed} Gwei</span>
+        <span>Gas 使用 ${roundResult.gasUsed} Gas</span>
       </div>
     </div>
   `

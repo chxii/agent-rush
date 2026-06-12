@@ -63,7 +63,7 @@ export function validateBattlePlan(plan, constraints = {}) {
   if (totalGas > gasPool) {
     errors.push({
       code: 'GAS_OVER_POOL',
-      message: `Allocated ${totalGas} Gwei, pool is ${gasPool} Gwei.`,
+      message: `Allocated ${totalGas} Gas, pool is ${gasPool} Gas.`,
       totalGas,
       gasPool,
     })

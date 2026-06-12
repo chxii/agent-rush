@@ -15,6 +15,7 @@ import { ProgressionEngine } from './ProgressionEngine.js'
 const DEFAULT_PLAY_MS = 25000
 const REVEAL_INTERVAL_MS = 900
 const SCAN_BUFFER_MS = 900
+const DEMO_SEED = 'agent-rush-c3-demo'
 
 export const RoundEngine = {
   gameState: null,
@@ -34,6 +35,8 @@ export const RoundEngine = {
   _timerDone: null,
   _paused: false,
   _interventionOpen: false,
+  _roundSeenBots: new Set(),
+  _demoSeed: readSeedFromUrl(),
 
   startRound(gameState, roundConfig = {}) {
     this.gameState = gameState
@@ -46,7 +49,12 @@ export const RoundEngine = {
     this.interventionState = createInterventionState()
     this.roundResult = null
     this._interventionOpen = false
+    UIRenderer.renderPipeline([])
     this.transition('scan')
+  },
+
+  resetRunIntroState() {
+    this._roundSeenBots.clear()
   },
 
   transition(newPhase) {
@@ -58,6 +66,7 @@ export const RoundEngine = {
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
     if (newPhase !== 'play') UIRenderer.setSelectionStatus(null)
+    if (newPhase !== 'execute') UIRenderer.renderPipeline([])
     UIRenderer.renderHeader(this.gameState)
 
     if (newPhase === 'scan') this.startScan()
@@ -75,9 +84,9 @@ export const RoundEngine = {
     UIRenderer.setTimerText('扫描中')
 
     const activeBotType = EnemyBotAI.getActiveBot(this.gameState.currentLayer)
-    if (activeBotType && !this.gameState.hasSeenBot(activeBotType)) {
+    if (activeBotType && !this._roundSeenBots.has(activeBotType)) {
       OverlayManager.showBotIntro(activeBotType, () => {
-        this.gameState.markBotSeen(activeBotType)
+        this._roundSeenBots.add(activeBotType)
         this.runScan(activeBotType)
       })
       return
@@ -91,10 +100,16 @@ export const RoundEngine = {
       this.gameState.currentScene,
       this.gameState.role,
       this.gameState.roleLevel,
+      {
+        seed: this._demoSeed,
+        tutorialCards: LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards,
+      },
     )
 
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
-    if (fixedCards) this.currentHand = this.currentHand.slice(0, fixedCards)
+    if (fixedCards && !LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards) {
+      this.currentHand = this.currentHand.slice(0, fixedCards)
+    }
 
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
@@ -102,6 +117,14 @@ export const RoundEngine = {
       text: `扫描 mempool：第 ${this.gameState.currentLayer} 层${activeBotType ? `，检测到 ${activeBotType}` : ''}`,
       isStreaming: false,
     })
+    if (LAYER_CONFIG[this.gameState.currentLayer]?.isBoss) {
+      ThoughtChainPanel.appendLog({
+        timestampMs: Date.now(),
+        source: 'system',
+        text: bossWarningFor(this.gameState.currentLayer, activeBotType),
+        isStreaming: false,
+      })
+    }
 
     this.currentHand.forEach((_, index) => {
       const timerId = window.setTimeout(() => {
@@ -137,6 +160,10 @@ export const RoundEngine = {
     UIRenderer.setSelectionStatus(null)
     UIRenderer.setTimerText('执行中')
     UIRenderer.setExecutionMode('semi-loop')
+    UIRenderer.initPipeline(selectedCards, {
+      gasAllocations: battlePlan.gasAllocations,
+      contingencies: battlePlan.contingencies,
+    })
     this._interventionOpen = true
     this.renderInterventionState('本回合可干预一次。')
 
@@ -144,6 +171,25 @@ export const RoundEngine = {
       this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
         interventionState: this.interventionState,
         forceSteal: () => EnemyBotAI.consumeForcedSteal(),
+        seed: this._demoSeed,
+        pipeline: {
+          init: (cards) => UIRenderer.initPipeline(cards, {
+            gasAllocations: battlePlan.gasAllocations,
+            contingencies: battlePlan.contingencies,
+          }),
+          start: (card) => UIRenderer.updatePipelineCard(card.id, { status: 'running' }),
+          update: (card) => UIRenderer.updatePipelineCard(card.id, {
+            status: card.status,
+            gasUsed: card.gasUsed,
+            actualProfit: card.actualProfit,
+          }),
+          incident: (card) => UIRenderer.updatePipelineCard(card.id, { status: 'incident' }),
+          decision: (card, decision) => {
+            UIRenderer.reorderPipeline(decision?.updatedExecutionOrder)
+            UIRenderer.updatePipelineCard(card.id, { status: card.status || 'running' })
+          },
+          complete: (result) => UIRenderer.completePipeline(result?.cards ?? []),
+        },
         onExecutionComplete: () => {
           this._interventionOpen = false
           UIRenderer.setInterventionState(null)
@@ -244,6 +290,7 @@ export const RoundEngine = {
   handleDecisionChange(input = {}) {
     this.updateDecisionDraft(input)
     const selection = this.getSelectionState()
+    selection.tutorial = this.buildTutorialFeedback(selection)
     UIRenderer.setSelectionStatus(selection)
     UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
   },
@@ -282,6 +329,7 @@ export const RoundEngine = {
 
   renderPlayableHand(message = '') {
     const selection = this.getSelectionState(message)
+    selection.tutorial = this.buildTutorialFeedback(selection)
     UIRenderer.renderHand(this.currentHand, [...this.selectedIds], {
       phase: 'play',
       constraints: selection,
@@ -299,7 +347,7 @@ export const RoundEngine = {
     }
 
     if (selection.selectedGas + card.gasCost > selection.gasPool) {
-      return { valid: false, message: `Gas 预算不足：还剩 ${selection.gasPool - selection.selectedGas} Gwei。` }
+      return { valid: false, message: `Gas 预算不足：还剩 ${selection.gasPool - selection.selectedGas} Gas。` }
     }
 
     return { valid: true, message: '' }
@@ -325,7 +373,7 @@ export const RoundEngine = {
         return
       }
       if (selectedGas + card.gasCost > gasPool) {
-        disabledReasons[card.id] = `Gas 不足，还剩 ${gasPool - selectedGas} Gwei`
+        disabledReasons[card.id] = `Gas 不足，还剩 ${gasPool - selectedGas} Gas`
       }
     })
 
@@ -410,6 +458,28 @@ export const RoundEngine = {
     })
   },
 
+  buildTutorialFeedback(selection) {
+    if (!LAYER_CONFIG[this.gameState?.currentLayer]?.isTutorial) return null
+    return UIRenderer.buildTutorialFeedback({
+      layer: this.gameState.currentLayer,
+      cards: this.currentHand,
+      selectedCards: this.getSelectedCards(),
+      gasAllocations: selection.gasAllocations,
+      role: this.gameState.role,
+      roleLevel: this.gameState.roleLevel,
+    })
+  },
+
+  toggleDemoSeed() {
+    this._demoSeed = this._demoSeed ? null : DEMO_SEED
+    ThoughtChainPanel.appendLog({
+      timestampMs: Date.now(),
+      source: 'system',
+      text: this._demoSeed ? `[Debug] 固定随机种子已启用：${this._demoSeed}` : '[Debug] 固定随机种子已关闭',
+      isStreaming: false,
+    })
+  },
+
   startPhaseTimer(durationMs, onDone, label = null) {
     this.clearPhaseTimer()
     this._timerDone = onDone
@@ -452,6 +522,12 @@ export const RoundEngine = {
   },
 }
 
+function readSeedFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get('seed') || null
+}
+
 function buildEmergencyResult(cards, error) {
   const failedCards = cards.map((card) => ({
     ...card,
@@ -479,4 +555,14 @@ function buildEmergencyResult(cards, error) {
       },
     ],
   }
+}
+
+function bossWarningFor(layer, botName) {
+  const warnings = {
+    7: '⚠️ 段位收尾：Shadow 正在全力封锁这片猎场，这是甩开它的最后机会。',
+    12: '⚠️ 段位收尾：Phantom 的算力碾压上来了，每一笔交易都在它的监视下。',
+    17: '⚠️ 段位收尾：Phantom+ 多线施压，撑过这层你就摸到终局了。',
+    20: '☠️ 最终战：Genesis 出价极凶、永远压不死。这是你证明自己的最后一战。',
+  }
+  return warnings[layer] ?? `⚠️ Boss 关：${botName ?? '未知对手'} 正在加压。`
 }
