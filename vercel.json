@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/config/env.js",
+      "destination": "/config/env.prod.js"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/llm",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ]
+}
