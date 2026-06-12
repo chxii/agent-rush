@@ -1,5 +1,6 @@
 const cardSections = new Map()
 const cardMeta = new Map()
+const loadingRows = new Map()
 
 const BOT_EMOJI = {
   'Bot-404': '🐣',
@@ -79,6 +80,47 @@ export const ThoughtChainPanel = {
     }
   },
 
+  showLoading(key, message, options = {}) {
+    if (!key || loadingRows.has(key)) return
+
+    const panel = options.cardId ? getThoughtPanel() : getLogPanel()
+    const parent = options.cardId ? getCardBody(options.cardId, options.cardTitle) : panel
+    if (!parent) return
+
+    const row = document.createElement('div')
+    row.className = options.cardId
+      ? 'thought-event event-loading is-loading'
+      : 'log-line log-executor loading-line is-loading'
+
+    if (options.cardId) {
+      row.innerHTML = `
+        <span class="event-icon">AI</span>
+        <div>
+          <strong>Executor thinking</strong>
+          <p>${escapeHtml(message)}</p>
+          <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+      `
+    } else {
+      row.innerHTML = `<span class="terminal-prefix">${this.displayId}@executor-pc &gt;&gt;</span> ${escapeHtml(message)} <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>`
+    }
+
+    parent.append(row)
+    loadingRows.set(key, row)
+    scrollToBottom(panel)
+  },
+
+  clearLoading(key) {
+    if (!key) return
+    loadingRows.get(key)?.remove()
+    loadingRows.delete(key)
+  },
+
+  clearAllLoading() {
+    loadingRows.forEach((row) => row.remove())
+    loadingRows.clear()
+  },
+
   startCard(card) {
     cardMeta.set(card.id, card)
     getCardBody(card.id, cardLabel(card))
@@ -120,6 +162,7 @@ export const ThoughtChainPanel = {
     if (thoughtPanel) thoughtPanel.innerHTML = ''
     cardSections.clear()
     cardMeta.clear()
+    loadingRows.clear()
   },
 }
 

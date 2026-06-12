@@ -137,6 +137,10 @@ async function executeCard(card, state) {
         await handleIncident(card, INCIDENT_TYPES.TARGET_STOLEN, result, state)
         continue
       }
+      if (isTerminalInterventionFailure(result)) {
+        await maybeHandleTerminalFailureIncident(card, terminalFailureIncidentType(result), result, state)
+        continue
+      }
       continue
     }
 
@@ -201,6 +205,12 @@ async function handleIncident(card, type, triggerResult, state) {
   await emit(state.options, 'onDecision', { card, snapshot, decision })
 
   await applyIncidentDecision(card, decision, state)
+}
+
+async function maybeHandleTerminalFailureIncident(card, type, triggerResult, state) {
+  const snapshot = buildIncidentSnapshot(card, type, triggerResult, state)
+  if (!hasSchedulableRemainder(snapshot)) return
+  await handleIncident(card, type, triggerResult, state)
 }
 
 async function maybeHandlePlayerIntervention(card, state) {
@@ -487,6 +497,8 @@ function incidentTitle(type) {
     [INCIDENT_TYPES.GAS_INSUFFICIENT]: 'Gas 不足',
     [INCIDENT_TYPES.PLAYER_INTERVENTION]: '玩家干预',
     [INCIDENT_TYPES.TARGET_INVALID]: '目标失效',
+    [INCIDENT_TYPES.TX_FAILED]: '交易失败',
+    [INCIDENT_TYPES.WINDOW_EXPIRED]: '窗口过期',
   }
   return titles[type] ?? type
 }
@@ -495,11 +507,25 @@ function isGasInsufficient(result) {
   return /insufficient gas/i.test(result.message ?? '') || result.requestedGas > result.remainingGasPool
 }
 
+function isTerminalInterventionFailure(result) {
+  if (!result || result.success !== false || result.invalid === true || result.stolen === true) return false
+  return result.status === 'failed' && (result.windowExpired === true || result.invalidOpportunity === true || result.tool === 'broadcast_tx')
+}
+
+function terminalFailureIncidentType(result) {
+  if (result.windowExpired === true) return INCIDENT_TYPES.WINDOW_EXPIRED
+  if (result.invalidOpportunity === true) return INCIDENT_TYPES.TARGET_INVALID
+  return INCIDENT_TYPES.TX_FAILED
+}
+
 function isMeaningfulInterventionIncident(snapshot, state) {
   if (!state.options.interventionWindow) return false
-  if (snapshot.event !== INCIDENT_TYPES.TARGET_STOLEN && snapshot.event !== INCIDENT_TYPES.GAS_INSUFFICIENT) return false
+  if (!isInterventionEligibleEvent(snapshot.event)) return false
   if (state.interventionState?.interventionUsed) return false
+  return hasSchedulableRemainder(snapshot)
+}
 
+function hasSchedulableRemainder(snapshot) {
   const activeCards = snapshot.allCardStatuses.filter((card) => !TERMINAL_STATUSES.has(card.status))
   if (activeCards.length === 0) return false
   if (activeCards.length > 1) return true
@@ -507,6 +533,14 @@ function isMeaningfulInterventionIncident(snapshot, state) {
 
   const onlyActiveCard = activeCards[0]
   return onlyActiveCard?.id !== snapshot.affectedCardId
+}
+
+function isInterventionEligibleEvent(event) {
+  return event === INCIDENT_TYPES.TARGET_STOLEN
+    || event === INCIDENT_TYPES.GAS_INSUFFICIENT
+    || event === INCIDENT_TYPES.TX_FAILED
+    || event === INCIDENT_TYPES.TARGET_INVALID
+    || event === INCIDENT_TYPES.WINDOW_EXPIRED
 }
 
 function toDeciderCard(card, gasBudget = card.gasCost) {

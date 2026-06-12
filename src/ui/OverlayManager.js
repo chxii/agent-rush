@@ -11,7 +11,7 @@ export const OverlayManager = {
         <div class="start-menu">
           <p class="overlay-copy">你是一支 MEV 团队的指挥官。你制定战略：挑机会、分资源、定预案、临场改价；你的 AI Executor Agent 自主地、长程地把战略执行下去：它拆解任务、真实调用链上工具、观察结果，在被对手抢占或你改令时迭代修复，最终向你交付这一轮的战果。</p>
           <label class="display-id-field">
-            <span class="label">显示用 ID</span>
+            <span class="label">请输入你的 ID</span>
             <input id="display-id-input" type="text" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" value="${escapeHtml(gameState.displayId ?? 'operator')}" placeholder="operator">
           </label>
           <div class="start-actions">

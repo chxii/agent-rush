@@ -72,7 +72,7 @@ test('tutorial layer 2 shows all five card types while keeping sandwich recommen
 test('pipeline state keeps terminal cards terminal during later updates', () => {
   const state = [
     { id: 'done', status: 'success', actualProfit: 1.2 },
-    { id: 'current', status: 'running' },
+    { id: 'current', status: 'incident' },
     { id: 'next', status: 'queued' },
   ]
 

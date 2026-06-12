@@ -573,7 +573,7 @@ function renderPipelineItem(card, index, total) {
 function renderPipelineChip(card) {
   const typeMeta = typeMetaFor(card.type)
   const status = normalizeStatus(card.status)
-  const statusClass = status === 'queued' ? 'pending' : status === 'running' || status === 'incident' ? 'now' : status === 'success' ? 'done' : 'fail'
+  const statusClass = status === 'queued' ? 'pending' : status === 'running' ? 'now' : status === 'success' ? 'done' : 'fail'
   const label = `${typeMeta.label} ${shortId(card.id)}`
   const statusLabel = pipelineStatusLabel(card, status)
   const hint = `查看 ${label} 的执行思路：${statusLabel}`
@@ -754,16 +754,16 @@ function tutorialVerdictIcon(item) {
 
 function pipelineStatusLabel(card, status) {
   if (status === 'queued') return '排队中'
-  if (status === 'running' || status === 'incident') return '执行中'
-  if (status === 'success') return `成 ${formatSignedEth(card.actualProfit ?? 0)}`
-  if (status === 'failed') return `败 ${formatSignedEth(card.actualProfit ?? 0)}`
+  if (status === 'running') return '执行中'
+  if (status === 'incident') return '重想中'
+  if (status === 'success' || status === 'failed') return formatSignedEth(card.actualProfit ?? 0)
   return statusLabel(status)
 }
 
 function updatePipelineStateForCard(state = [], cardId, updates = {}) {
   return state.map((card) => {
     if (card.id !== cardId) {
-      if (card.status === 'running') return { ...card, status: 'queued' }
+      if (card.status === 'running' || card.status === 'incident') return { ...card, status: 'queued' }
       return card
     }
     if (TERMINAL_STATUSES.has(card.status) && !TERMINAL_STATUSES.has(updates.status)) return card

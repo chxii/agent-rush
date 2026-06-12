@@ -10,25 +10,39 @@ import { UIRenderer } from '../ui/UIRenderer.js'
 export const ExecutionEngine = {
   async runSemiLoopMode(battlePlan, gameState, options = {}) {
     const streamWriters = new Map()
+    const usesStreamingDecider = !options.decider && !ExecutorAI._useMock
     const decider =
       options.decider ??
       (ExecutorAI._useMock
         ? RuleDecider
         : new LLMDecider(ExecutorAI, {
         onCallStart: ({ callType, cardId }) => {
+          const key = streamKey(callType, cardId)
           const streamCardId = cardScopedCallTypes.has(callType) ? cardId : null
+          const loadingCardId = loadingCardScopedCallTypes.has(callType) ? cardId : null
+          const loadingText = loadingTextFor(callType)
+          if (loadingText) {
+            ThoughtChainPanel.showLoading(key, loadingText, {
+              cardId: loadingCardId,
+              cardTitle: loadingCardId,
+            })
+          }
           const writer = ThoughtChainPanel.appendStreaming(`[${callType}] `, null, {
             cardId: streamCardId,
             cardTitle: streamCardId,
           })
-          streamWriters.set(streamKey(callType, cardId), writer)
+          streamWriters.set(key, writer)
         },
         onChunk: ({ callType, cardId, chunk }) => {
-          streamWriters.get(streamKey(callType, cardId))?.write(chunk)
+          const key = streamKey(callType, cardId)
+          ThoughtChainPanel.clearLoading(key)
+          streamWriters.get(key)?.write(chunk)
         },
         onCallEnd: ({ callType, cardId }) => {
-          streamWriters.get(streamKey(callType, cardId))?.end()
-          streamWriters.delete(streamKey(callType, cardId))
+          const key = streamKey(callType, cardId)
+          ThoughtChainPanel.clearLoading(key)
+          streamWriters.get(key)?.end()
+          streamWriters.delete(key)
         },
       }))
 
@@ -54,6 +68,7 @@ export const ExecutionEngine = {
           gameState,
           onExecutionComplete: options.onExecutionComplete,
           pipeline: options.pipeline,
+          settlementLoading: usesStreamingDecider,
         }),
       },
     )
@@ -61,6 +76,7 @@ export const ExecutionEngine = {
 }
 
 const cardScopedCallTypes = new Set(['CardExecution'])
+const loadingCardScopedCallTypes = new Set(['IncidentResponse', 'PlayerIntervention'])
 
 function createUiHooks(options = {}) {
   return {
@@ -116,10 +132,22 @@ function createUiHooks(options = {}) {
       })
     },
     onExecutionComplete(payload) {
+      if (options.settlementLoading) {
+        ThoughtChainPanel.showLoading('SettlementReport:round', '正在复盘这一回合、生成总结…')
+      }
       options.pipeline?.complete?.(payload?.result)
       options.onExecutionComplete?.(payload)
     },
   }
+}
+
+function loadingTextFor(callType) {
+  const labels = {
+    IncidentResponse: '正在评估现场、决定应对…',
+    PlayerIntervention: '正在理解你的指令、调整计划…',
+    SettlementReport: '正在复盘这一回合、生成总结…',
+  }
+  return labels[callType] ?? ''
 }
 
 function streamKey(callType, cardId) {
@@ -139,14 +167,18 @@ function incidentTitle(type) {
 
 function incidentDetail(snapshot = {}) {
   const trigger = snapshot.trigger ?? {}
-  if (trigger.type === 'TARGET_STOLEN') {
+  if (trigger.type === 'target_stolen') {
     const bidder = trigger.rawResult?.competitor ?? '对手 Bot'
     const bid = trigger.competitorGasBid ? `${trigger.competitorGasBid} Gwei` : '更高 Gas'
     return `${bidder} 抢先打包了目标，出价 ${bid}。你的预案：${contingencyLabel(snapshot.playerContingency)}。${trigger.message ?? ''}`
   }
 
-  if (trigger.type === 'PLAYER_INTERVENTION') {
+  if (trigger.type === 'player_intervention') {
     return `玩家指令：${snapshot.playerInstruction ?? '调整执行策略'}。Executor 将按现场状态重规划。`
+  }
+
+  if (trigger.type === 'tx_failed' || trigger.type === 'target_invalid' || trigger.type === 'window_expired') {
+    return `${trigger.message ?? '当前机会已经失败。'} 这张牌不会被救回；干预只会重新调度剩余机会牌和 Gas。`
   }
 
   return trigger.message ?? trigger.type ?? '现场状态发生变化。'

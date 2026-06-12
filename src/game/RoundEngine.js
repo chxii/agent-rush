@@ -1094,6 +1094,9 @@ function createForceStealHook(engine) {
 function incidentWindowLabel(snapshot = {}) {
   if (snapshot.event === INCIDENT_TYPES.TARGET_STOLEN) return `${snapshot.affectedCardId} 被抢`
   if (snapshot.event === INCIDENT_TYPES.GAS_INSUFFICIENT) return `${snapshot.affectedCardId} Gas 不足`
+  if (snapshot.event === INCIDENT_TYPES.TX_FAILED) return `${snapshot.affectedCardId} 交易失败，可调度剩余资源`
+  if (snapshot.event === INCIDENT_TYPES.TARGET_INVALID) return `${snapshot.affectedCardId} 目标失效，可调度剩余资源`
+  if (snapshot.event === INCIDENT_TYPES.WINDOW_EXPIRED) return `${snapshot.affectedCardId} 窗口过期，可调度剩余资源`
   return snapshot.affectedCardId ? `${snapshot.affectedCardId} 需要处理` : '现场需要处理'
 }
 

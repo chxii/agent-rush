@@ -55,8 +55,8 @@ export const TOOL_SIMULATOR_CONFIG = {
 }
 
 export const BOT_STRENGTH_BY_NAME = {
-  'Bot-404': 0.15,
-  Shadow: 0.3,
+  'Bot-404': 0.17,
+  Shadow: 0.32,
   Phantom: 0.55,
   'Phantom+': 0.75,
   Genesis: 0.95,

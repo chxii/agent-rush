@@ -295,6 +295,64 @@ test('meaningful stolen incident waits for intervention window and consumes play
   assert.equal(result.telemetry.deciderCalls.decideOnIncident, 0)
 })
 
+test('terminal tx failure with remaining cards opens guarded intervention window', async () => {
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30, b: 30 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+  const interventionState = createInterventionState()
+  let windowCalls = 0
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 8, scene: 'nft_market' },
+    {
+      decider: createSpyDecider(),
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['failed', 'success'] }),
+      interventionState,
+      maxReplans: 2,
+      interventionWindow: async () => {
+        windowCalls += 1
+      },
+    },
+  )
+
+  assert.equal(windowCalls, 1)
+  assert.equal(result.incidents[0].event, 'tx_failed')
+  assert.equal(result.cards.find((item) => item.id === 'a').status, 'failed')
+})
+
+test('terminal tx failure on the last schedulable card does not create a useless incident', async () => {
+  const cards = [card('a')]
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30 },
+    contingencies: { a: 'fight' },
+  })
+  let windowCalls = 0
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 8, scene: 'nft_market' },
+    {
+      decider: createSpyDecider(),
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['failed'] }),
+      interventionState: createInterventionState(),
+      maxReplans: 2,
+      interventionWindow: async () => {
+        windowCalls += 1
+      },
+    },
+  )
+
+  assert.equal(windowCalls, 0)
+  assert.equal(result.incidents.length, 0)
+})
+
 test('meaningless or already-used incidents do not open an intervention window', async () => {
   const cards = [card('a')]
   const battlePlan = createBattlePlan({

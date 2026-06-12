@@ -75,7 +75,7 @@ test('C2 batch aggregation reports strategy, role, card, gas, and half-loop metr
   assert.equal(Array.isArray(first.metrics.cumulativeProfitCurve), true)
 })
 
-test('terminal tx failures are reported without spending half-loop incidents', async () => {
+test('last-card terminal tx failures are reported without spending half-loop incidents', async () => {
   const result = await runLayerSimulation({
     seed: 'c2-terminal-failure',
     cards: [card('fails', { type: 'arbitrage' })],
