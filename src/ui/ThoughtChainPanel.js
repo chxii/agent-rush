@@ -58,7 +58,7 @@ export const ThoughtChainPanel = {
       attached = true
       scrollToBottom(panel)
     }
-    if (options.cardId || prefix) attachLine()
+    if (options.cardId) attachLine()
 
     if (onStart) onStart(span)
 

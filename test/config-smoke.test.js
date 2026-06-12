@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import { CARD_TYPES, COMPETITION_BY_RARITY, RARITY } from '../src/config/cards.js'
 import { LAYER_CONFIG } from '../src/config/scenes.js'
+import { buildTutorialFeedback } from '../src/ui/UIRenderer.js'
 
 test('card config can be imported in Node and has the expected shape', () => {
   assert.ok(Array.isArray(CARD_TYPES))
@@ -29,4 +30,20 @@ test('tutorial layers use fixed cards that cover all card types plus a scam exam
   for (const type of CARD_TYPES) assert.equal(types.has(type), true, `${type} tutorial coverage`)
   assert.equal(tutorialCards.some((card) => card.isScam && card.trueRisk > card.displayedRisk), true)
   assert.equal(LAYER_CONFIG[4].isTutorial, false)
+})
+
+test('tutorial feedback computes card metrics without shadowing the EV helper', () => {
+  const cards = LAYER_CONFIG[1].tutorialCards
+  assert.doesNotThrow(() => {
+    const feedback = buildTutorialFeedback({
+      layer: 1,
+      cards,
+      selectedCards: [cards[0]],
+      gasAllocations: { [cards[0].id]: cards[0].gasCost + 5 },
+    })
+
+    assert.equal(feedback.cards.length, cards.length)
+    assert.equal(typeof feedback.cards[0].successProbability, 'number')
+    assert.equal(typeof feedback.cards[0].expectedValue, 'number')
+  })
 })

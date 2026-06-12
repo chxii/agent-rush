@@ -534,15 +534,15 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
   const notes = cards.map((card) => {
     const gas = gasAllocations[card.id] ?? card.gasCost
     const successProbability = estimateSuccessProbability(card, gas, { layer, role, roleLevel })
-    const expectedValue = expectedValue(card, gas)
+    const ev = expectedValue(card, gas)
     return {
       name: `${typeMetaFor(card.type).label} ${shortId(card.id)}`,
       successProbability,
-      expectedValue,
-      recommended: recommendedTutorialCard(layer, card, expectedValue),
-      avoid: card.isScam || expectedValue < 0,
-      verdict: tutorialVerdict(layer, card, selectedIds.has(card.id), expectedValue),
-      formula: `${card.expectedProfit.toFixed(2)} × (1 - ${formatPercent(card.trueRisk)}) - ${gas}×0.001 = ${formatSignedEth(expectedValue)}`,
+      expectedValue: ev,
+      recommended: recommendedTutorialCard(layer, card, ev),
+      avoid: card.isScam || ev < 0,
+      verdict: tutorialVerdict(layer, card, selectedIds.has(card.id), ev),
+      formula: `${card.expectedProfit.toFixed(2)} × (1 - ${formatPercent(card.trueRisk)}) - ${gas}×0.001 = ${formatSignedEth(ev)}`,
     }
   })
 
