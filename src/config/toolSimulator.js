@@ -35,7 +35,7 @@ export const TOOL_SIMULATOR_CONFIG = {
     profitVariance: 0.15,
   },
   boss: {
-    botStrengthBonus: 0.03,
+    botStrengthBonus: 0.07,
   },
   replace: {
     requiredBidMultiplier: 1.05,
