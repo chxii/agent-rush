@@ -65,6 +65,11 @@
       UIRenderer.init()
       ExecutorAI.init()
       GameState.init({ storage: createBrowserStorage(window.localStorage) })
+      if (new URLSearchParams(window.location.search).get('tutorial') === '1') {
+        GameState.tutorialSeen = false
+        GameState.currentLayer = 1
+        GameState.saveProgress()
+      }
       ThoughtChainPanel.setDisplayId(GameState.displayId)
       const startRound = (gameState) => RoundEngine.startRound(gameState)
       startRound.resetRunIntroState = () => RoundEngine.resetRunIntroState()

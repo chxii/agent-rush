@@ -102,7 +102,8 @@ test('batch sim uses a valid RuleDecider battle plan', async () => {
 
 test('decision max selected cards follows the layer curve', () => {
   assert.equal(maxSelectedCardsForLayer(1), 1)
-  assert.equal(maxSelectedCardsForLayer(3), 1)
+  assert.equal(maxSelectedCardsForLayer(2), 1)
+  assert.equal(maxSelectedCardsForLayer(3), 2)
   assert.equal(maxSelectedCardsForLayer(4), 2)
   assert.equal(maxSelectedCardsForLayer(7), 2)
   assert.equal(maxSelectedCardsForLayer(8), 3)

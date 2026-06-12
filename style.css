@@ -285,7 +285,7 @@ h3 {
 
 .play-surface {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -714,6 +714,14 @@ h3 {
 
 .log-system {
   color: var(--muted);
+}
+
+.log-tutor {
+  color: var(--text);
+}
+
+.log-tutor .terminal-prefix {
+  color: var(--warn);
 }
 
 .settlement {
@@ -1460,6 +1468,24 @@ code {
   display: grid;
   gap: 3px;
   border-left: 3px solid var(--accent);
+}
+
+.pipeline-count,
+.pcount {
+  display: none;
+}
+
+.pipeline-chip,
+.pipeline-main,
+.pipeline-main strong,
+.pipeline-main small {
+  white-space: nowrap;
+}
+
+.pipeline-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 @keyframes cursor-blink {

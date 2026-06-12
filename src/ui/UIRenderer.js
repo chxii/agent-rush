@@ -46,6 +46,7 @@ const elements = {
   timer: null,
   actionBar: null,
   selectionStatus: null,
+  tutorialPanel: null,
   interventionPanel: null,
 }
 
@@ -68,13 +69,21 @@ export const UIRenderer = {
     elements.actionBar = document.querySelector('#action-bar')
     elements.selectionStatus = document.querySelector('#selection-status')
 
-    if (!elements.selectionStatus && elements.handArea?.parentElement) {
+    if (!elements.selectionStatus && elements.actionBar) {
       elements.selectionStatus = document.createElement('div')
       elements.selectionStatus.id = 'selection-status'
       elements.selectionStatus.className = 'selection-status'
-      elements.handArea.insertAdjacentElement('afterend', elements.selectionStatus)
-    } else if (elements.selectionStatus && elements.handArea?.parentElement && elements.selectionStatus.parentElement !== elements.handArea.parentElement) {
-      elements.handArea.insertAdjacentElement('afterend', elements.selectionStatus)
+      elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+    } else if (elements.selectionStatus && elements.actionBar && elements.selectionStatus.parentElement !== elements.actionBar) {
+      elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+    }
+
+    elements.tutorialPanel = document.querySelector('#tutorial-panel')
+    if (!elements.tutorialPanel && elements.handArea?.parentElement) {
+      elements.tutorialPanel = document.createElement('section')
+      elements.tutorialPanel.id = 'tutorial-panel'
+      elements.tutorialPanel.className = 'tutorial-panel'
+      elements.handArea.insertAdjacentElement('afterend', elements.tutorialPanel)
     }
 
     if (!elements.interventionPanel && elements.actionBar) {
@@ -243,6 +252,34 @@ export const UIRenderer = {
     this.setPlayEnabled(isPlayable && selectedIds.length > 0 && (constraints?.isValid ?? true))
   },
 
+  updateHandConstraints(cards, selectedIds = [], constraints = {}) {
+    const selectedSet = new Set(selectedIds)
+
+    cards.forEach((card) => {
+      const node = elements.handArea?.querySelector(`[data-card-id="${CSS.escape(card.id)}"]`)
+      if (!node) return
+
+      const disabledReason = constraints?.disabledReasons?.[card.id] ?? ''
+      const isSelected = selectedSet.has(card.id)
+      node.classList.toggle('blocked', Boolean(disabledReason))
+      if (node.tagName === 'BUTTON') node.disabled = Boolean(disabledReason)
+
+      let reasonNode = node.querySelector('.blocked-reason')
+      if (disabledReason && !isSelected) {
+        if (!reasonNode) {
+          reasonNode = document.createElement('span')
+          reasonNode.className = 'blocked-reason'
+          node.append(reasonNode)
+        }
+        reasonNode.textContent = disabledReason
+      } else if (reasonNode) {
+        reasonNode.remove()
+      }
+    })
+
+    this.setPlayEnabled(selectedIds.length > 0 && (constraints?.isValid ?? true))
+  },
+
   initPipeline(cards, battlePlan = {}) {
     pipelineState = cards.map((card) => ({
       ...card,
@@ -319,7 +356,6 @@ export const UIRenderer = {
         <div class="pipeline-bar" aria-label="执行顺序">
           <span class="pipeline-label plabel">执行顺序</span>
           ${pipelineState.map((card, index) => renderPipelineItem(card, index, pipelineState.length)).join('')}
-          <span class="pipeline-count pcount">${renderPipelineCount()}</span>
         </div>
         <div class="current-card-banner">
           ${renderCurrentBanner(currentPipelineCard())}
@@ -369,8 +405,20 @@ export const UIRenderer = {
       <strong>${status.selectedCount} / ${status.maxCards} 张 · ${status.selectedGas} / ${status.gasPool} Gas</strong>
       <small>剩余 ${status.remainingGas ?? Math.max(0, status.gasPool - status.selectedGas)} Gas</small>
       ${status.message ? `<span>${status.message}</span>` : ''}
-      ${renderTutorialPanel(status.tutorial)}
     `
+  },
+
+  setTutorialFeedback(tutorial) {
+    if (!elements.tutorialPanel) return
+
+    if (!tutorial) {
+      elements.tutorialPanel.hidden = true
+      elements.tutorialPanel.innerHTML = ''
+      return
+    }
+
+    elements.tutorialPanel.hidden = false
+    elements.tutorialPanel.innerHTML = renderTutorialPanel(tutorial)
   },
 
   setInterventionState(state = null) {
@@ -480,7 +528,7 @@ function renderTutorialPanel(tutorial) {
   if (!tutorial) return ''
 
   return `
-    <section class="tutorial-panel">
+    <div class="tutorial-panel-inner">
       <div class="tutorial-steps">
         ${['选牌', '分 Gas', '设预案', '执行']
           .map((step, index) => `<span class="${index <= tutorial.stepIndex ? 'active' : ''}">${index + 1}. ${step}</span>`)
@@ -503,7 +551,7 @@ function renderTutorialPanel(tutorial) {
           `,
         )
         .join('')}
-    </section>
+    </div>
   `
 }
 
@@ -520,7 +568,7 @@ function renderPipelineChip(card) {
       <span class="dot"></span>
       <span class="pipeline-main">
         <strong>${typeMeta.label} ${shortId(card.id)}</strong>
-        <small>${statusLabel(status)}</small>
+        <small>${pipelineStatusLabel(card, status)}</small>
       </span>
     </button>
   `
@@ -648,13 +696,7 @@ function tutorialBody(layer, notes) {
 
 function tutorialExtraHtml(layer, stepIndex) {
   if (layer === 1) {
-    return `
-      <div class="tutorial-mini-grid">
-        ${Object.values(CARD_TYPE_META)
-          .map((type) => `<span class="${type.className}"><strong>${type.label}</strong>${type.tip}</span>`)
-          .join('')}
-      </div>
-    `
+    return ''
   }
 
   if (layer === 2) {
@@ -716,6 +758,13 @@ function statusLabel(status) {
     failed: '败',
   }
   return labels[status] ?? status
+}
+
+function pipelineStatusLabel(card, status) {
+  if (status === 'queued') return '排队中'
+  if (status === 'running' || status === 'incident') return '执行中'
+  if (status === 'success' || status === 'failed') return formatSignedEth(card.actualProfit ?? 0)
+  return statusLabel(status)
 }
 
 function contingencyLabel(value) {

@@ -40,6 +40,10 @@ export const RoundEngine = {
   _tutorialExecutionPaused: false,
   _tutorialCustomPromptOpen: false,
   _tutorialExecutionResume: null,
+  _tutorialSeenCardTypes: new Set(),
+  _tutorialLogKeys: new Set(),
+  _tutorialPromptTimerId: null,
+  _tutorialClosingLogged: false,
   _roundSeenBots: new Set(),
   _demoSeed: readSeedFromUrl(),
 
@@ -58,6 +62,10 @@ export const RoundEngine = {
     this._tutorialExecutionPaused = false
     this._tutorialCustomPromptOpen = false
     this._tutorialExecutionResume = null
+    this._tutorialSeenCardTypes = new Set()
+    this._tutorialLogKeys = new Set()
+    this._tutorialPromptTimerId = null
+    this._tutorialClosingLogged = false
     UIRenderer.renderPipeline([])
     this.transition('scan')
   },
@@ -75,6 +83,7 @@ export const RoundEngine = {
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
     if (newPhase !== 'play') UIRenderer.setSelectionStatus(null)
+    if (newPhase !== 'play') UIRenderer.setTutorialFeedback(null)
     if (newPhase !== 'execute') UIRenderer.renderPipeline([])
     UIRenderer.renderHeader(this.gameState)
 
@@ -105,20 +114,23 @@ export const RoundEngine = {
   },
 
   runScan(activeBotType) {
+    const activeTutorial = this.isActiveTutorial()
     this.currentHand = generateHand(
       this.gameState.currentScene,
       this.gameState.role,
       this.gameState.roleLevel,
       {
         seed: this._demoSeed,
-        tutorialCards: LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards,
+        tutorialCards: activeTutorial ? LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards : undefined,
       },
     )
 
     const fixedCards = LAYER_CONFIG[this.gameState.currentLayer]?.fixedCards
-    if (fixedCards && !LAYER_CONFIG[this.gameState.currentLayer]?.tutorialCards) {
+    if (fixedCards && !activeTutorial) {
       this.currentHand = this.currentHand.slice(0, fixedCards)
     }
+
+    this.appendTutorialLogs('scan')
 
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
@@ -159,6 +171,7 @@ export const RoundEngine = {
 
   startPlay() {
     this.renderPlayableHand()
+    this.appendTutorialLogs('play')
     if (this.isActiveTutorial()) {
       UIRenderer.setTimerText('练习中')
       return
@@ -236,6 +249,7 @@ export const RoundEngine = {
     UIRenderer.setTimerText('等待结算')
     UIRenderer.setPlayButtonLabel('结算')
     UIRenderer.setPlayEnabled(true)
+    this.appendTutorialSettlementLog(this.roundResult)
   },
 
   startSettle(roundResult) {
@@ -270,6 +284,7 @@ export const RoundEngine = {
       this.selectedIds.add(cardId)
       this.decisionDraft.gasAllocations[cardId] = card.gasCost
       this.decisionDraft.contingencies[cardId] = 'fight'
+      this.handleTutorialCardSelected(card)
     }
 
     this.renderPlayableHand()
@@ -300,6 +315,7 @@ export const RoundEngine = {
           contingencies: this.decisionDraft.contingencies,
         })
     this.gasAllocations = Object.entries(this.battlePlan.gasAllocations).map(([cardId, gas]) => ({ cardId, gas }))
+    this.appendTutorialOutcomeLog(options.skip)
     this.transition('execute')
   },
 
@@ -320,12 +336,11 @@ export const RoundEngine = {
     this.updateDecisionDraft(input)
     const selection = this.getSelectionState()
     selection.tutorial = this.buildTutorialFeedback(selection)
-    UIRenderer.renderHand(this.currentHand, [...this.selectedIds], {
-      phase: 'play',
-      constraints: selection,
-    })
+    UIRenderer.updateHandConstraints(this.currentHand, [...this.selectedIds], selection)
     UIRenderer.setSelectionStatus(selection)
+    UIRenderer.setTutorialFeedback(selection.tutorial)
     UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
+    this.handleTutorialDecisionChange(input)
   },
 
   confirmSettle() {
@@ -348,16 +363,9 @@ export const RoundEngine = {
         : { accepted: false, message: '先写一句自定义干预。' }
       this.renderInterventionState(result.message)
       if (result.accepted && this._tutorialExecutionResume) {
-        ThoughtChainPanel.appendLog({
-          timestampMs: Date.now(),
-          source: 'system',
-          text: `[教学自定义干预示例] ${text}`,
-          isStreaming: false,
-        })
-        this._tutorialExecutionResume()
-        this._tutorialExecutionResume = null
-        this._tutorialExecutionPaused = false
-        this._tutorialCustomPromptOpen = false
+        appendTutorLog(`> 📑 收到你的指令："${text}"。`)
+        appendTutorLog('> 🤖 提示：教学关用的是脚本化执行，不会真去解析你这句话。真实游戏里，接入 AI 后我会读懂你的自然语言并照做。这里先让你熟悉"打字下令"这个动作。')
+        this.resumeTutorialExecution()
       }
       return result
     }
@@ -382,9 +390,7 @@ export const RoundEngine = {
         text: `[干预已排队] ${result.instruction.text}`,
         isStreaming: false,
       })
-      this._tutorialExecutionResume()
-      this._tutorialExecutionResume = null
-      this._tutorialExecutionPaused = false
+      this.resumeTutorialExecution()
       return result
     }
     ThoughtChainPanel.appendLog({
@@ -411,6 +417,17 @@ export const RoundEngine = {
     })
   },
 
+  resumeTutorialExecution() {
+    if (this._tutorialPromptTimerId && typeof window !== 'undefined') {
+      window.clearTimeout(this._tutorialPromptTimerId)
+    }
+    this._tutorialPromptTimerId = null
+    this._tutorialExecutionResume?.()
+    this._tutorialExecutionResume = null
+    this._tutorialExecutionPaused = false
+    this._tutorialCustomPromptOpen = false
+  },
+
   renderPlayableHand(message = '') {
     const selection = this.getSelectionState(message)
     selection.tutorial = this.buildTutorialFeedback(selection)
@@ -419,6 +436,7 @@ export const RoundEngine = {
       constraints: selection,
     })
     UIRenderer.setSelectionStatus(selection)
+    UIRenderer.setTutorialFeedback(selection.tutorial)
     UIRenderer.setPlayEnabled(this.selectedIds.size > 0 && selection.isValid)
   },
 
@@ -562,10 +580,91 @@ export const RoundEngine = {
     return this.isActiveTutorial() && this.gameState?.currentLayer === 3
   },
 
+  appendTutorialLogs(stage) {
+    if (!this.isActiveTutorial()) return
+    const layer = this.gameState?.currentLayer
+    const key = `${layer}:${stage}`
+    if (this._tutorialLogKeys.has(key)) return
+    this._tutorialLogKeys.add(key)
+
+    const messages = TUTORIAL_LOGS[layer]?.[stage] ?? []
+    messages.forEach(appendTutorLog)
+  },
+
+  handleTutorialCardSelected(card) {
+    if (!this.isActiveTutorial() || this.gameState?.currentLayer !== 1 || !card) return
+
+    if (card.isScam) {
+      appendTutorLog('> ⚠️ 这张就是坑。利润 x2 是诱饵，真实风险 80%+。记住手感：太美好的牌先怀疑。')
+      return
+    }
+
+    if (this._tutorialSeenCardTypes.has(card.type)) return
+    this._tutorialSeenCardTypes.add(card.type)
+    const line = TUTORIAL_TYPE_LOGS[card.type]
+    if (line) appendTutorLog(line)
+  },
+
+  handleTutorialDecisionChange(input = {}) {
+    if (!this.isActiveTutorial()) return
+
+    if (this.gameState?.currentLayer === 2 && input.gasAllocations?.tutorial_2_sandwich != null) {
+      appendTutorLogOnce(this, 'layer2:gas-sensitive', '> 📊 看到没？夹击对 Gas 敏感，溢价喂下去成功率跳得快。这就是"喂对牌"。')
+    }
+  },
+
+  appendTutorialOutcomeLog(skipped = false) {
+    if (!this.isActiveTutorial()) return
+
+    if (skipped) {
+      appendTutorLog('> 🤹 跳过也行，但你会错过这手练习。真实战场跳过还要付机会成本。')
+      return
+    }
+
+    const layer = this.gameState?.currentLayer
+    const selectedCards = this.getSelectedCards()
+    if (layer === 1) {
+      const pickedScam = selectedCards.some((card) => card.isScam)
+      appendTutorLog(pickedScam
+        ? '> 💀 看，骗局牌烧光了 Gas，颗粒无收。这就是不排雷的代价。没关系，下一课记得先怀疑。'
+        : '> 🎆 干净利落。第一课：排雷比抢钱重要。下一关教你喂 Gas。')
+    }
+    if (layer === 2) {
+      const selection = this.getSelectionState()
+      const feedback = this.buildTutorialFeedback(selection)
+      const selectedNotes = feedback?.cards?.filter((note) => selectedCards.some((card) => note.name.includes(card.id.slice(-3)))) ?? []
+      const negative = selectedNotes.some((note) => note.expectedValue < 0)
+      appendTutorLog(negative
+        ? '> 📉 EV 为负还硬打，结果就是亏。数字不会骗人。下次配到正再出手。'
+        : '> 🎀 漂亮。第二课记住两件事：Gas 喂对牌，决策看 EV。下一关，玩点真的。')
+    }
+    if (layer === 3) {
+      this.appendTutorialLogs('execute')
+    }
+  },
+
+  appendTutorialSettlementLog(roundResult) {
+    if (!this.isTutorialInterventionLayer() || this._tutorialClosingLogged) return
+    this._tutorialClosingLogged = true
+
+    appendTutorLog((roundResult?.netProfit ?? 0) >= 0
+      ? '> 👍 漂亮，你的干预保住了局面。看到没？同样被抢，下不下令、怎么下令，结果差很多。'
+      : '> 🧐 这次没全保住，但你已经走完了完整流程。真实战场里，干预时机和选择就是这么影响结果的。')
+    appendTutorLog('> 🤖 这就是 Executor：作为一个 AI Agent，我会自己拆任务、排序、调工具，被抢时按你的预案应对，你也能临场干预。')
+    appendTutorLog('> 🎓 三课学完了：排雷、配 Gas 看 EV、预案与干预。')
+    appendTutorLog('> 🚀 接下来是真实战场。Bot 会越来越凶，让我们一起合作，活到第 20 层，拿下胜利。')
+  },
+
   waitForTutorialIntervention() {
     if (!this.isTutorialInterventionLayer() || !this._tutorialExecutionPaused) return Promise.resolve()
+    this.appendTutorialLogs('stolen')
     this.renderInterventionState('教学暂停：点一个快捷干预，或写一句自定义干预。越早下令，可调整的牌和 Gas 越多。')
     return new Promise((resolve) => {
+      if (typeof window !== 'undefined') {
+        this._tutorialPromptTimerId = window.setTimeout(() => {
+          appendTutorLog('> ⏳ 还在等你下令。点一个快捷干预，或在框里打字。')
+        }, 10000)
+      }
       this._tutorialExecutionResume = resolve
     })
   },
@@ -620,6 +719,74 @@ export const RoundEngine = {
     this._timerDone = null
     this._paused = false
   },
+}
+
+const TUTORIAL_LOGS = {
+  1: {
+    scan: [
+      '> 🤖 Executor 已上线。这是练习场，我带你走一遍。',
+      '> 📊 这层是 DEX 套利场，最稳的猎场。没人跟你抢，安心练手。',
+      '> 🃏 桌上发了一手机会牌。每张写着能赚多少、要花多少 Gas、风险多大。先别急着选，点开一张张看。',
+      '> 🕵️ 看到那张利润高得离谱、风险却低得反常的牌了吗？那是骗局牌。牌面给你看的是假风险，真打下去几乎血本无归。',
+      '> 👀 剩下的是 5 种正经牌型。点开看看它们的说明。',
+      '> ✅ 避开骗局、挑一张稳的，就过关。',
+    ],
+  },
+  2: {
+    scan: [
+      '> ⛽ 第二课：Gas。它是你的插队费，也是每层的预算。这层给你一池，用不完不扣分，也不带到下一层。',
+      '> 🎚️ 不同牌吃 Gas 的方式不一样。夹击、抢跑多喂 Gas 能明显提升成功率；套利、清算喂多了可能浪费。',
+      '> 👉 试试选中那张夹击牌，把 Gas 往上拉，看右边成功率怎么变。',
+      '> 🧮 EV 是这张牌打很多次的平均收益。EV 为正才值得长期打，EV 为负就是慢性亏损。',
+      '> 🎲 EV 是平均值，不是这一把的结果。成败是掷骰子，成功后利润还会浮动。',
+      '> ⚖️ 你博弈的不只是 EV，还有 Gas 怎么分、敢不敢赌成功率。',
+      '> ✅ 把 Gas 配到 EV 为正，点执行。',
+    ],
+  },
+  3: {
+    scan: [
+      '> 🧪 最后一课，也是最重要的。前两关没人动你，这次来真的。Bot-404 上线了，它要抢一手。',
+      '> 🎛️ 这次你可以选 2 张牌一起打。它们共用一个 Gas 池，给一张多喂，另一张就少。',
+      '> 🛡️ 选牌时，给每张设一个预案：万一这张被抢了，我要怎么办。',
+      '> 💪🏳️ 给你想保的牌设"硬刚"，给次要的设"放弃"。设好就执行。',
+    ],
+    execute: [
+      '> 🔁 注意看执行顺序。是我，Executor，排的，不是你选牌的顺序。我默认优先打更有价值的牌。',
+      '> 🧠 你给的是方向，顺序和临场操作交给我。',
+    ],
+    stolen: [
+      '> ⚠️ 被抢了！Bot-404 抢先成交第一张。执行已暂停，你还有一张牌在排队，现在能改它的命运。',
+      '> 🗣️ 这就是"干预"：每回合一次机会，临场改打法。越早下令，能调整的牌和 Gas 越多。',
+      '> 💪 全部硬刚：剩余 Gas 摊给所有还能动的牌，尽量都保住。',
+      '> 🏳️ 放弃最高风险：砍掉最危险那张，把 Gas 省给稳的。',
+      '> 🎯 Gas 集中最优：剩余 Gas 全压到当前 EV 最好的那张。',
+      '> ↗️ 真实回合里你还能直接打字下令。我会用 AI 理解你的话。试着写一句，比如"把剩余 Gas 都给套利"。',
+    ],
+  },
+}
+
+const TUTORIAL_TYPE_LOGS = {
+  arbitrage: '> 💰 套利：低买高卖赚差价。稳，但人人都看得见，利润薄。',
+  sandwich: '> 🥪 夹击：卡在大单前后吃价差。最吃排序，也最吃 Gas。',
+  front_run: '> 🏃 抢跑：纯拼出价高低。Gas 给够就排前面，给少就被盖。',
+  liquidation: '> ⚖️ 清算：帮系统平坏账领赏金。稳，但堆 Gas 提升有限。',
+  nft_snipe: '> 🖼️ NFT 抢购：抢限量名额。回报飘、窗口短，最容易扑空。',
+}
+
+function appendTutorLogOnce(engine, key, text) {
+  if (engine._tutorialLogKeys.has(key)) return
+  engine._tutorialLogKeys.add(key)
+  appendTutorLog(text)
+}
+
+function appendTutorLog(text) {
+  if (typeof document === 'undefined') return
+  ThoughtChainPanel.appendLog({
+    timestampMs: Date.now(),
+    source: 'tutor',
+    text,
+    isStreaming: false,
+  })
 }
 
 function applySkipPenalty(roundResult) {

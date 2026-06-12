@@ -24,16 +24,18 @@ test('tutorial helper is gated by tutorialSeen and only disables timers for acti
 
 test('decision changes re-render hand constraints so lowered Gas can re-enable blocked cards', () => {
   const originalState = captureRoundEngineState()
-  const originalRenderHand = UIRenderer.renderHand
+  const originalUpdateHandConstraints = UIRenderer.updateHandConstraints
   const originalSetSelectionStatus = UIRenderer.setSelectionStatus
+  const originalSetTutorialFeedback = UIRenderer.setTutorialFeedback
   const originalSetPlayEnabled = UIRenderer.setPlayEnabled
   const calls = []
 
   try {
-    UIRenderer.renderHand = (cards, selectedIds, options) => {
-      calls.push({ cards, selectedIds, options })
+    UIRenderer.updateHandConstraints = (cards, selectedIds, constraints) => {
+      calls.push({ cards, selectedIds, constraints })
     }
     UIRenderer.setSelectionStatus = () => {}
+    UIRenderer.setTutorialFeedback = () => {}
     UIRenderer.setPlayEnabled = () => {}
 
     RoundEngine.gameState = { currentLayer: 4, gasPool: 200 }
@@ -51,14 +53,15 @@ test('decision changes re-render hand constraints so lowered Gas can re-enable b
     RoundEngine.handleDecisionChange({ gasAllocations: { selected: 50 } })
 
     const rendered = calls.at(-1)
-    assert.ok(rendered, 'renderHand should be called after decision change')
-    assert.equal(rendered.options.constraints.selectedGas, 50)
-    assert.equal(rendered.options.constraints.disabledReasons['candidate-a'], undefined)
-    assert.equal(rendered.options.constraints.disabledReasons['candidate-b'], undefined)
+    assert.ok(rendered, 'updateHandConstraints should be called after decision change')
+    assert.equal(rendered.constraints.selectedGas, 50)
+    assert.equal(rendered.constraints.disabledReasons['candidate-a'], undefined)
+    assert.equal(rendered.constraints.disabledReasons['candidate-b'], undefined)
   } finally {
     Object.assign(RoundEngine, originalState)
-    UIRenderer.renderHand = originalRenderHand
+    UIRenderer.updateHandConstraints = originalUpdateHandConstraints
     UIRenderer.setSelectionStatus = originalSetSelectionStatus
+    UIRenderer.setTutorialFeedback = originalSetTutorialFeedback
     UIRenderer.setPlayEnabled = originalSetPlayEnabled
   }
 })

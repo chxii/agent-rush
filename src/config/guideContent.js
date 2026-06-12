@@ -89,6 +89,15 @@ export const RULES_PAGES = [
       '顶部控制台一直挂着这些数：当前层数、Gas Pool、累计收益、胜利线、失败线。盯着它们，在越来越凶的对手手底下活到终局，就赢了。',
     ],
   },
+  {
+    title: 'EV 博弈与 Gas 时代说明',
+    body: [
+      'EV（期望收益）= 预期利润 × (1 - 真实风险) - Gas 成本。它是这张牌<strong>打很多次的平均收益</strong>，帮你横向比牌。',
+      '<span class="guide-note">但 EV 不是你这一把能拿到的钱 🎲。实际结算是：先掷骰子定成败，成功后利润还会上下浮动，失败则倒亏一部分 Gas。同一张 EV 为正的牌，这把可能大赚，下把可能小亏，长期才向 EV 收敛。</span>',
+      '<span class="guide-note">所以你博弈的不只是算对 EV：多张牌<strong>共用一个 Gas 池</strong>，喂了这张就少了那张，还要赌成功率那一掷。这就是这游戏比"背公式"好玩的地方。</span>',
+      '<span class="guide-note">其中"交易失败仍要烧 Gas"符合早期公开竞价（PGA）时代；现代 Flashbots bundle 里失败的交易不上链、不烧 gas。这点游戏为了博弈手感保留了旧形态。</span>',
+    ],
+  },
 ]
 
 export const AGENT_GUIDE = {
