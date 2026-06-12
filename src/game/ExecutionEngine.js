@@ -69,6 +69,10 @@ function createUiHooks(options = {}) {
       ThoughtChainPanel.startCard(card)
     },
 
+    onInitialPlan({ executionOrder, reasoning }) {
+      options.pipeline?.reorder?.(executionOrder, reasoning)
+    },
+
     onToolResult({ card, action, params, result }) {
       if (result?.remainingGasPool != null && options.gameState) {
         options.gameState.gasPool = Math.max(0, Math.round(Number(result.remainingGasPool) || 0))

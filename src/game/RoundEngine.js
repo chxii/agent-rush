@@ -15,7 +15,8 @@ import { ExecutionEngine } from './ExecutionEngine.js'
 import { ProgressionEngine } from './ProgressionEngine.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
 
-const DEFAULT_PLAY_MS = 25000
+const DEFAULT_PLAY_MS = 60000
+const DEFAULT_INTERVENTION_WINDOW_MS = 60000
 const REVEAL_INTERVAL_MS = 900
 const SCAN_BUFFER_MS = 900
 const TUTORIAL_LOG_INTERVAL_MS = 1200
@@ -39,6 +40,11 @@ export const RoundEngine = {
   _timerDone: null,
   _paused: false,
   _interventionOpen: false,
+  _interventionWindowTimerId: null,
+  _interventionWindowIntervalId: null,
+  _interventionWindowResolve: null,
+  _interventionWindowEndAt: 0,
+  _interventionWindowSkipped: false,
   _settlementReady: false,
   _tutorialExecutionPaused: false,
   _tutorialCustomPromptOpen: false,
@@ -64,6 +70,7 @@ export const RoundEngine = {
     this.interventionState = createInterventionState()
     this.roundResult = null
     this._interventionOpen = false
+    this.clearInterventionWindow()
     this._settlementReady = false
     this._tutorialExecutionPaused = false
     this._tutorialCustomPromptOpen = false
@@ -88,6 +95,7 @@ export const RoundEngine = {
     this._timerRemainingMs = 0
     this._timerDone = null
     this._interventionOpen = newPhase === 'execute' ? this._interventionOpen : false
+    if (newPhase !== 'execute') this.clearInterventionWindow()
     this.gameState.setPhase(newPhase)
     UIRenderer.setPhase(newPhase)
     if (newPhase !== 'play') UIRenderer.setSelectionStatus(null)
@@ -205,8 +213,8 @@ export const RoundEngine = {
       gasAllocations: battlePlan.gasAllocations,
       contingencies: battlePlan.contingencies,
     })
-    this._interventionOpen = true
-    this.renderInterventionState('本回合可干预一次。')
+    this._interventionOpen = this.isTutorialInterventionLayer()
+    this.renderInterventionState(this._interventionOpen ? '本回合可干预一次。' : '')
     if (this.isTutorialInterventionLayer()) this.appendTutorialLogs('execute')
 
     try {
@@ -219,6 +227,7 @@ export const RoundEngine = {
           : undefined,
         decider: this.isActiveTutorial() ? tutorialLayerDecider : undefined,
         delay: this.isTutorialInterventionLayer() ? () => this.waitForTutorialIntervention() : undefined,
+        interventionWindow: this.isTutorialInterventionLayer() ? undefined : (snapshot) => this.waitForInterventionWindow(snapshot),
         pipeline: {
           init: (cards) => UIRenderer.initPipeline(cards, {
             gasAllocations: battlePlan.gasAllocations,
@@ -231,6 +240,7 @@ export const RoundEngine = {
             actualProfit: card.actualProfit,
           }),
           incident: (card) => UIRenderer.updatePipelineCard(card.id, { status: 'incident' }),
+          reorder: (executionOrder) => UIRenderer.reorderPipeline(executionOrder),
           decision: (card, decision) => {
             UIRenderer.reorderPipeline(decision?.updatedExecutionOrder)
             UIRenderer.updatePipelineCard(card.id, { status: card.status || 'running' })
@@ -239,6 +249,7 @@ export const RoundEngine = {
         },
         onExecutionComplete: () => {
           this._interventionOpen = false
+          this.clearInterventionWindow()
           UIRenderer.setInterventionState(null)
         },
       })
@@ -252,6 +263,7 @@ export const RoundEngine = {
       this.roundResult = buildEmergencyResult(selectedCards, error)
     }
     this._interventionOpen = false
+    this.clearInterventionWindow()
     UIRenderer.setInterventionState(null)
     this._settlementReady = true
     UIRenderer.setTimerText('等待结算')
@@ -392,6 +404,9 @@ export const RoundEngine = {
       this.resumeTutorialExecution()
       return result
     }
+    if (result.accepted && this._interventionWindowResolve) {
+      this.finishInterventionWindow('已收到干预，正在按你的指令重规划。')
+    }
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
       source: 'system',
@@ -399,6 +414,12 @@ export const RoundEngine = {
       isStreaming: false,
     })
     return result
+  },
+
+  skipInterventionWindow() {
+    if (!this._interventionWindowResolve) return
+    this._interventionWindowSkipped = true
+    this.finishInterventionWindow('已跳过干预，按原预案继续。')
   },
 
   renderInterventionState(message = '') {
@@ -412,6 +433,9 @@ export const RoundEngine = {
       used: this.interventionState.interventionUsed,
       pending: Boolean(this.interventionState.pendingInstruction),
       allowCustomPrompt: this._tutorialCustomPromptOpen,
+      canSkip: Boolean(this._interventionWindowResolve),
+      skipped: this._interventionWindowSkipped,
+      remainingSec: this._interventionWindowEndAt ? Math.max(0, Math.ceil((this._interventionWindowEndAt - Date.now()) / 1000)) : null,
       message,
     })
   },
@@ -682,6 +706,50 @@ export const RoundEngine = {
     })
   },
 
+  waitForInterventionWindow(snapshot) {
+    if (this._interventionWindowResolve || this.interventionState.interventionUsed) return Promise.resolve()
+
+    const durationMs = this.roundConfig.interventionWindowMs ?? DEFAULT_INTERVENTION_WINDOW_MS
+    this._interventionOpen = true
+    this._interventionWindowSkipped = false
+    this._interventionWindowEndAt = Date.now() + durationMs
+
+    ThoughtChainPanel.appendLog({
+      timestampMs: Date.now(),
+      source: 'system',
+      text: `[可干预窗口] ${incidentWindowLabel(snapshot)}，你有 ${Math.ceil(durationMs / 1000)}s 可以下令，或点“跳过”。`,
+      isStreaming: false,
+    })
+
+    return new Promise((resolve) => {
+      this._interventionWindowResolve = resolve
+      const update = () => this.renderInterventionState('出事了：现在可以临场干预，或跳过按预案自动处理。')
+      update()
+      this._interventionWindowIntervalId = window.setInterval(update, 250)
+      this._interventionWindowTimerId = window.setTimeout(() => {
+        this.finishInterventionWindow('干预窗口超时，按原预案继续。')
+      }, durationMs)
+    })
+  },
+
+  finishInterventionWindow(message = '') {
+    const resolve = this._interventionWindowResolve
+    this.clearInterventionWindow()
+    this._interventionOpen = false
+    this.renderInterventionState(message)
+    if (resolve) resolve()
+  },
+
+  clearInterventionWindow() {
+    if (this._interventionWindowTimerId) window.clearTimeout(this._interventionWindowTimerId)
+    if (this._interventionWindowIntervalId) window.clearInterval(this._interventionWindowIntervalId)
+    this._interventionWindowTimerId = null
+    this._interventionWindowIntervalId = null
+    this._interventionWindowResolve = null
+    this._interventionWindowEndAt = 0
+    this._interventionWindowSkipped = false
+  },
+
   toggleDemoSeed() {
     this._demoSeed = this._demoSeed ? null : DEMO_SEED
     ThoughtChainPanel.appendLog({
@@ -748,6 +816,7 @@ const TUTORIAL_LOGS = {
       '> 📊 这层是 DEX 套利场，最稳的猎场。没人跟你抢，安心练手。',
       '> 🃏 桌上发了一手机会牌。每张写着能赚多少、要花多少 Gas、风险多大。先别急着选，点开一张张看。',
       '> 🕵️ 看到那张利润高得离谱、风险却低得反常的牌了吗？那是骗局牌。牌面给你看的是假风险，真打下去几乎血本无归。',
+      '> 🤖 我也会尽力帮你排雷，但别太依赖我哦。',
       '> 👀 剩下的是 5 种正经牌型。点开看看它们的说明。',
       '> ✅ 避开骗局、挑一张稳的，就过关。',
     ],
@@ -1003,6 +1072,12 @@ function createForceStealHook(engine) {
     }
     return EnemyBotAI.consumeForcedSteal()
   }
+}
+
+function incidentWindowLabel(snapshot = {}) {
+  if (snapshot.event === INCIDENT_TYPES.TARGET_STOLEN) return `${snapshot.affectedCardId} 被抢`
+  if (snapshot.event === INCIDENT_TYPES.GAS_INSUFFICIENT) return `${snapshot.affectedCardId} Gas 不足`
+  return snapshot.affectedCardId ? `${snapshot.affectedCardId} 需要处理` : '现场需要处理'
 }
 
 const tutorialLayerDecider = {

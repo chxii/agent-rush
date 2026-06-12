@@ -85,7 +85,13 @@
         RoundEngine.confirmPlay(options)
       })
       UIRenderer.onDecisionChange((input) => RoundEngine.handleDecisionChange(input))
-      UIRenderer.onInterventionRequest((input) => RoundEngine.handleInterventionRequest(input))
+      UIRenderer.onInterventionRequest((input) => {
+        if (input?.type === 'skip_window') {
+          RoundEngine.skipInterventionWindow()
+          return
+        }
+        RoundEngine.handleInterventionRequest(input)
+      })
       document.querySelector('#codex-button').addEventListener('click', () => {
         RoundEngine.pauseTimers()
         OverlayManager.showCodex(() => RoundEngine.resumeTimers())

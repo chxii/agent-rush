@@ -141,6 +141,12 @@ export const UIRenderer = {
     })
 
     elements.interventionPanel?.addEventListener('click', (event) => {
+      const skipButton = event.target.closest('[data-intervention-skip]')
+      if (skipButton && interventionRequestCallback) {
+        interventionRequestCallback({ type: 'skip_window' })
+        return
+      }
+
       const shortcutButton = event.target.closest('[data-intervention-shortcut]')
       if (!shortcutButton || !interventionRequestCallback) return
       interventionRequestCallback({
@@ -349,9 +355,6 @@ export const UIRenderer = {
           <span class="pipeline-label plabel">执行顺序</span>
           ${pipelineState.map((card, index) => renderPipelineItem(card, index, pipelineState.length)).join('')}
         </div>
-        <div class="current-card-banner">
-          ${renderCurrentBanner(currentPipelineCard())}
-        </div>
       </section>
     `
 
@@ -424,8 +427,10 @@ export const UIRenderer = {
 
     const formDisabled = (state.used || state.pending) && !state.allowCustomPrompt
     const shortcutsDisabled = state.used || state.pending
+    const countdown = Number.isFinite(Number(state.remainingSec)) ? ` · 剩 ${Math.max(0, Number(state.remainingSec))}s` : ''
     elements.interventionPanel.hidden = false
     elements.interventionPanel.innerHTML = `
+      ${state.canSkip ? `<div class="intervention-window-status"><span>⚠ 可干预${countdown}</span><button class="secondary-button" type="button" data-intervention-skip>跳过</button></div>` : ''}
       <form class="intervention-form">
         <label>
           <span class="label">⚡ 干预</span>
@@ -593,19 +598,6 @@ function animatePipelineMove(previousPositions) {
   })
 }
 
-function renderCurrentBanner(card) {
-  if (!card) {
-    return '<span class="label">Pipeline</span><strong>等待执行队列</strong>'
-  }
-
-  const typeMeta = typeMetaFor(card.type)
-  return `
-    <span class="current-card-kicker">当前执行</span>
-    <strong class="${typeMeta.className}">${typeMeta.label} · ${shortId(card.id)}</strong>
-    <span class="current-card-meta">预期 ${formatEth(card.expectedProfit)} · 预案 ${contingencyLabel(card.contingency)} · Gas ${card.allocatedGas ?? card.gasCost}</span>
-  `
-}
-
 export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], gasAllocations = {}, role, roleLevel }) {
   if (layer < 1 || layer > 3) return null
 
@@ -673,12 +665,6 @@ function tutorialVerdict(layer, card, selected, ev) {
   if (layer === 2 && card.type === 'sandwich') return selected ? '正确：现在调高 Gas 看成功率变化。' : '推荐：夹击最吃 Gas，适合练习溢价。'
   if (ev < 0) return selected ? '不推荐：算上真实风险和 Gas 后 EV 为负。' : '观察即可：EV 为负，长期会亏。'
   return selected ? '可以打：风险、Gas 和收益能对上。' : '可选：EV 为正，适合按步骤执行。'
-}
-
-function currentPipelineCard() {
-  return pipelineState.find((card) => card.status === 'running' || card.status === 'incident')
-    ?? pipelineState.find((card) => !TERMINAL_STATUSES.has(card.status))
-    ?? pipelineState[pipelineState.length - 1]
 }
 
 function contingencyOption(value, label, selectedValue) {

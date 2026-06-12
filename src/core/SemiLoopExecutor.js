@@ -41,6 +41,10 @@ export async function runSemiLoopExecution(battlePlan, context = {}, options = {
   let queue = orderCards(cards, initialPlan.executionOrder)
   let cursor = 0
   const completedCards = []
+  await emit(options, 'onInitialPlan', {
+    executionOrder: [...queue],
+    reasoning: initialPlan.reasoning,
+  })
 
   while (cursor < queue.length) {
     const cardId = queue[cursor]
@@ -185,6 +189,11 @@ async function handleIncident(card, type, triggerResult, state) {
   })
   recordEvent(card, 'incident', incidentTitle(type), triggerResult.message ?? type)
   await emit(state.options, 'onIncident', { card, snapshot })
+
+  if (isMeaningfulInterventionIncident(snapshot, state)) {
+    await state.options.interventionWindow?.(snapshot)
+    if (await maybeHandlePlayerIntervention(card, state)) return
+  }
 
   const decision = await decideOnIncidentSafely(snapshot, state)
   state.telemetry.incidentDecisions.push({ event: type, cardId: card.id, decision })
@@ -374,7 +383,6 @@ function buildIncidentSnapshot(card, type, triggerResult, state) {
       expectedProfit: item.expectedProfit,
       gasCost: item.gasCost,
       displayedRisk: item.displayedRisk,
-      trueRisk: item.trueRisk,
       timeWindowSec: item.timeWindowSec,
     })),
     trigger: {
@@ -487,10 +495,34 @@ function isGasInsufficient(result) {
   return /insufficient gas/i.test(result.message ?? '') || result.requestedGas > result.remainingGasPool
 }
 
+function isMeaningfulInterventionIncident(snapshot, state) {
+  if (!state.options.interventionWindow) return false
+  if (snapshot.event !== INCIDENT_TYPES.TARGET_STOLEN && snapshot.event !== INCIDENT_TYPES.GAS_INSUFFICIENT) return false
+  if (state.interventionState?.interventionUsed) return false
+
+  const activeCards = snapshot.allCardStatuses.filter((card) => !TERMINAL_STATUSES.has(card.status))
+  if (activeCards.length === 0) return false
+  if (activeCards.length > 1) return true
+  if ((snapshot.remainingGasPool ?? 0) > 0) return true
+
+  const onlyActiveCard = activeCards[0]
+  return onlyActiveCard?.id !== snapshot.affectedCardId
+}
+
 function toDeciderCard(card, gasBudget = card.gasCost) {
   return {
-    ...card,
+    id: card.id,
+    type: card.type,
+    rarity: card.rarity,
+    expectedProfit: card.expectedProfit,
+    gasCost: card.gasCost,
     gasBudget,
+    displayedRisk: card.displayedRisk,
+    timeWindowSec: card.timeWindowSec,
+    competitionLevel: card.competitionLevel,
+    riskReason: card.riskReason,
+    status: card.status,
+    actualProfit: card.actualProfit,
   }
 }
 

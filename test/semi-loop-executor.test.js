@@ -91,6 +91,90 @@ test('semi-loop does not replan on a smooth round', async () => {
   assert.equal(result.telemetry.deciderCalls.decideOnIncident, 0)
 })
 
+test('semi-loop emits normalized initial execution order before card execution', async () => {
+  const cards = createCards()
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30, b: 30, c: 30 },
+    contingencies: { a: 'fight', b: 'fight', c: 'fight' },
+  })
+  const events = []
+  const decider = {
+    async planInitial() {
+      return { reasoning: 'Run c first, then a; normalization appends b.', executionOrder: ['c', 'a'] }
+    },
+    async decideOnIncident(snapshot) {
+      return RuleDecider.decideOnIncident(snapshot)
+    },
+    async summarize(input) {
+      return RuleDecider.summarize(input)
+    },
+  }
+
+  await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 1, scene: 'dex_arb' },
+    {
+      decider,
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['success', 'success', 'success'] }),
+      hooks: {
+        onInitialPlan({ executionOrder }) {
+          events.push(['initial', executionOrder])
+        },
+        onCardStart({ card }) {
+          events.push(['start', card.id])
+        },
+      },
+    },
+  )
+
+  assert.deepEqual(events[0], ['initial', ['c', 'a', 'b']])
+  assert.deepEqual(events.slice(1).map((item) => item[1]), ['c', 'a', 'b'])
+})
+
+test('semi-loop hides trueRisk and isScam from decider inputs and incident snapshots', async () => {
+  const cards = [
+    card('a', { displayedRisk: 0.1, trueRisk: 0.95, isScam: true }),
+    card('b', { displayedRisk: 0.2, trueRisk: 0.8 }),
+  ]
+  const inputs = []
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30, b: 30 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+  const decider = createSpyDecider({
+    async planInitial(input) {
+      inputs.push(input)
+      return RuleDecider.planInitial(input)
+    },
+    async decideOnIncident(snapshot) {
+      return RuleDecider.decideOnIncident(snapshot)
+    },
+    async summarize(input) {
+      return RuleDecider.summarize(input)
+    },
+  })
+
+  await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 8, scene: 'nft_market' },
+    {
+      decider,
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['stolen', 'success'] }),
+      maxReplans: 2,
+    },
+  )
+
+  assert.equal('trueRisk' in inputs[0].cards[0], false)
+  assert.equal('isScam' in inputs[0].cards[0], false)
+  assert.equal(inputs[0].cards[0].displayedRisk, 0.1)
+  assert.equal('trueRisk' in decider.incidentSnapshots[0].allCardStatuses[0], false)
+  assert.equal('isScam' in decider.incidentSnapshots[0].allCardStatuses[0], false)
+})
+
 test('semi-loop uses rule fallback after the replan limit is reached', async () => {
   const cards = createCards()
   const battlePlan = createBattlePlan({
@@ -176,6 +260,97 @@ test('shortcut player intervention does not spend LLM replan budget', async () =
   assert.equal(result.incidents[0].event, 'player_intervention')
   assert.equal(result.telemetry.replans, 0)
   assert.equal(result.telemetry.deciderCalls.decideOnIncident, 0)
+})
+
+test('meaningful stolen incident waits for intervention window and consumes player command first', async () => {
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30, b: 30 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+  const interventionState = createInterventionState()
+  const decider = createSpyDecider()
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 8, scene: 'nft_market' },
+    {
+      decider,
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['stolen', 'success'] }),
+      interventionState,
+      maxReplans: 2,
+      interventionWindow: async () => {
+        requestPlayerIntervention(interventionState, { type: 'shortcut', shortcutId: 'abandon_highest_risk' })
+      },
+    },
+  )
+
+  assert.equal(result.incidents.length, 2)
+  assert.equal(result.incidents[0].event, 'target_stolen')
+  assert.equal(result.incidents[1].event, 'player_intervention')
+  assert.equal(decider.incidentSnapshots.length, 0)
+  assert.equal(result.telemetry.interventionUsed, true)
+  assert.equal(result.telemetry.deciderCalls.decideOnIncident, 0)
+})
+
+test('meaningless or already-used incidents do not open an intervention window', async () => {
+  const cards = [card('a')]
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30 },
+    contingencies: { a: 'fight' },
+  })
+  let windowCalls = 0
+
+  await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 30, layer: 8, scene: 'nft_market' },
+    {
+      decider: createSpyDecider(),
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['stolen'] }),
+      maxReplans: 2,
+      interventionState: createInterventionState(),
+      interventionWindow: async () => {
+        windowCalls += 1
+      },
+    },
+  )
+
+  assert.equal(windowCalls, 0)
+})
+
+test('intervention window timeout or skip falls back to automatic incident decision', async () => {
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 30, b: 30 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+  let windowCalls = 0
+  const decider = createSpyDecider()
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 100, layer: 8, scene: 'nft_market' },
+    {
+      decider,
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['stolen', 'success'] }),
+      maxReplans: 2,
+      interventionState: createInterventionState(),
+      interventionWindow: async () => {
+        windowCalls += 1
+      },
+    },
+  )
+
+  assert.equal(windowCalls, 1)
+  assert.equal(result.incidents.filter((item) => item.event === 'player_intervention').length, 0)
+  assert.equal(decider.incidentSnapshots.length, 1)
+  assert.equal(result.telemetry.deciderCalls.decideOnIncident, 1)
 })
 
 test('semi-loop formats reallocate gas trace params without object placeholders', async () => {
@@ -346,6 +521,7 @@ function card(id, overrides = {}) {
     expectedProfit: overrides.expectedProfit ?? 1,
     displayedRisk: overrides.displayedRisk ?? 0.2,
     trueRisk: overrides.trueRisk ?? 0.2,
+    isScam: overrides.isScam ?? false,
     gasCost: overrides.gasCost ?? 30,
     timeWindowSec: overrides.timeWindowSec ?? 30,
     competitionLevel: 1,
