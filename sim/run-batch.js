@@ -98,12 +98,13 @@ export async function runFullGameSimulation(options = {}) {
       strategy,
       gasPool: options.gasPool ?? gasPoolFor(layer, role, roleLevel),
     })
+    const netProfit = applySkipPenalty(layerResult)
     layers.push(layerResult)
 
-    cumulativeProfit = roundEth(cumulativeProfit + layerResult.summary.netProfit)
-    if (layerResult.summary.netProfit < 0) {
+    cumulativeProfit = roundEth(cumulativeProfit + netProfit)
+    if (netProfit < 0) {
       consecutiveLoss += 1
-    } else if (layerResult.summary.netProfit > 0) {
+    } else if (netProfit > 0) {
       consecutiveLoss = 0
     }
 
@@ -145,6 +146,16 @@ export async function runFullGameSimulation(options = {}) {
     consecutiveLoss,
     layers,
   }
+}
+
+function applySkipPenalty(layerResult) {
+  if ((layerResult.summary?.cards ?? 0) > 0) return layerResult.summary.netProfit
+
+  const penalty = Math.max(0, Number(WIN_LOSS_CONFIG.skipPenaltyEth) || 0)
+  const netProfit = -penalty
+  layerResult.summary.netProfit = netProfit
+  layerResult.summary.skipPenaltyEth = penalty
+  return netProfit
 }
 
 export async function runBatchGames(options = {}) {

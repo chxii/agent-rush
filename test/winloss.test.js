@@ -144,6 +144,36 @@ test('ProgressionEngine ends layer 20 as a loss when victory line is missed', ()
   }
 })
 
+test('skip penalty makes just-over-line late-game skipping miss the layer 20 victory line', () => {
+  const originalVictory = OverlayManager.showVictory
+  const originalGameOver = OverlayManager.showGameOver
+  const originalLayer20Fail = OverlayManager.showLayer20Fail
+  let layer20FailStats = null
+
+  OverlayManager.showVictory = () => {
+    throw new Error('victory should not trigger after skip penalties')
+  }
+  OverlayManager.showGameOver = () => {
+    throw new Error('consecutive-loss game over is not the exploit check here')
+  }
+  OverlayManager.showLayer20Fail = (stats) => {
+    layer20FailStats = stats
+  }
+
+  try {
+    const gameState = state({ currentLayer: 20, cumulativeProfit: 8.8, consecutiveLoss: 0 })
+    ProgressionEngine.afterRound({ netProfit: -0.1, cards: [], skipPenaltyEth: 0.1 }, gameState)
+
+    assert.equal(layer20FailStats.currentLayer, 20)
+    assert.equal(layer20FailStats.cumulativeProfit, 8.7)
+    assert.equal(layer20FailStats.consecutiveLoss, 1)
+  } finally {
+    OverlayManager.showVictory = originalVictory
+    OverlayManager.showGameOver = originalGameOver
+    OverlayManager.showLayer20Fail = originalLayer20Fail
+  }
+})
+
 function state(overrides = {}) {
   return Object.assign(Object.create(GameState), {
     currentLayer: 1,
