@@ -40,7 +40,7 @@ body {
     var(--bg);
   background-size: auto, auto, 26px 26px, 26px 26px, auto;
   color: var(--text);
-  font-family: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-family: "JetBrains Mono", "Noto Sans SC", ui-monospace, "Cascadia Mono", Consolas, sans-serif;
   font-size: 13px;
 }
 
@@ -190,7 +190,7 @@ h3 {
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  gap: 16px;
+  gap: 22px;
   flex-wrap: wrap;
 }
 
@@ -206,24 +206,26 @@ h3 {
   padding: 12px;
 }
 
-.header-grid > div {
+.header-grid .stat {
   min-width: 88px;
   border: 0;
   background: transparent;
   padding: 0;
 }
 
-.header-grid strong {
-  font-size: 18px;
+.header-grid .stat strong {
+  display: block;
+  color: var(--text);
+  font-size: 16px;
   font-weight: 700;
 }
 
-.header-grid small {
-  display: block;
-  margin-top: 5px;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.55;
+.header-grid .stat.win strong {
+  color: var(--accent);
+}
+
+.header-grid .stat.danger strong {
+  color: var(--warn);
 }
 
 .rolestrip {
@@ -1186,6 +1188,10 @@ h3 {
   color: var(--text);
 }
 
+.guide-section .overlay-copy strong {
+  color: var(--accent);
+}
+
 .guide-entry span {
   color: var(--muted);
   font-size: 12.5px;
@@ -1219,6 +1225,13 @@ code {
   border-bottom: 1px solid var(--line);
   background: rgba(8, 12, 14, 0.62);
   padding: 10px 12px;
+}
+
+#codex-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 18px;
 }
 
 .pipeline-label,
@@ -1368,12 +1381,16 @@ code {
 
 .tutorial-panel {
   display: grid;
-  gap: 10px;
   margin-top: 10px;
   border: 1px solid rgba(43, 217, 138, 0.35);
   border-left: 4px solid var(--accent);
   background: rgba(43, 217, 138, 0.06);
-  padding: 10px;
+  padding: 8px 10px;
+}
+
+.tutorial-panel-inner {
+  display: grid;
+  gap: 8px;
 }
 
 .tutorial-steps {
@@ -1395,44 +1412,50 @@ code {
   color: var(--accent);
 }
 
-.tutorial-panel > strong {
-  color: var(--text);
-}
-
-.tutorial-panel > p,
-.tutorial-card-note p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-.tutorial-card-note {
-  display: grid;
-  gap: 6px;
-  border: 1px solid var(--line);
-  background: rgba(7, 9, 11, 0.58);
-  padding: 9px;
-}
-
-.tutorial-card-note > div {
+.tutorial-inspection {
+  min-height: 32px;
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.tutorial-card-note > div span,
-.tutorial-card-note small {
-  color: var(--muted);
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(142, 163, 154, 0.28);
+  background: rgba(7, 9, 11, 0.58);
+  padding: 6px 8px;
+  margin: 0;
+  color: var(--text);
   font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
-.tutorial-card-note.recommended {
+.tutorial-inspection.empty {
+  color: var(--muted);
+}
+
+.tutorial-inspection.compact {
+  display: flex;
+  gap: 14px;
+}
+
+.tutorial-inspection span {
+  flex: 0 0 auto;
+}
+
+.tutorial-inspection-verdict {
+  color: var(--muted);
+}
+
+.tutorial-inspection.recommended {
   border-color: rgba(43, 217, 138, 0.58);
 }
 
-.tutorial-card-note.avoid {
+.tutorial-inspection.avoid {
   border-color: rgba(255, 93, 93, 0.58);
+}
+
+.tutorial-formula {
+  margin-left: auto;
+  color: var(--accent);
 }
 
 .tutorial-mini-grid,

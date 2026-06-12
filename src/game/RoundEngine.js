@@ -16,6 +16,7 @@ import { ProgressionEngine } from './ProgressionEngine.js'
 const DEFAULT_PLAY_MS = 25000
 const REVEAL_INTERVAL_MS = 900
 const SCAN_BUFFER_MS = 900
+const TUTORIAL_LOG_INTERVAL_MS = 600
 const DEMO_SEED = 'agent-rush-c3-demo'
 
 export const RoundEngine = {
@@ -42,12 +43,15 @@ export const RoundEngine = {
   _tutorialExecutionResume: null,
   _tutorialSeenCardTypes: new Set(),
   _tutorialLogKeys: new Set(),
+  _tutorialLogQueue: [],
+  _tutorialLogTimerId: null,
   _tutorialPromptTimerId: null,
   _tutorialClosingLogged: false,
   _roundSeenBots: new Set(),
   _demoSeed: readSeedFromUrl(),
 
   startRound(gameState, roundConfig = {}) {
+    this.clearTutorialLogQueue()
     this.gameState = gameState
     this.roundConfig = roundConfig
     this.currentHand = []
@@ -64,6 +68,8 @@ export const RoundEngine = {
     this._tutorialExecutionResume = null
     this._tutorialSeenCardTypes = new Set()
     this._tutorialLogKeys = new Set()
+    this._tutorialLogQueue = []
+    this._tutorialLogTimerId = null
     this._tutorialPromptTimerId = null
     this._tutorialClosingLogged = false
     UIRenderer.renderPipeline([])
@@ -130,14 +136,13 @@ export const RoundEngine = {
       this.currentHand = this.currentHand.slice(0, fixedCards)
     }
 
-    this.appendTutorialLogs('scan')
-
     ThoughtChainPanel.appendLog({
       timestampMs: Date.now(),
       source: 'system',
       text: `扫描 mempool：第 ${this.gameState.currentLayer} 层${activeBotType ? `，检测到 ${activeBotType}` : ''}`,
       isStreaming: false,
     })
+    this.appendTutorialLogs('scan')
     if (LAYER_CONFIG[this.gameState.currentLayer]?.isBoss) {
       ThoughtChainPanel.appendLog({
         timestampMs: Date.now(),
@@ -200,6 +205,7 @@ export const RoundEngine = {
     })
     this._interventionOpen = true
     this.renderInterventionState('本回合可干预一次。')
+    if (this.isTutorialInterventionLayer()) this.appendTutorialLogs('execute')
 
     try {
       this.roundResult = await ExecutionEngine.runSemiLoopMode(battlePlan, this.gameState, {
@@ -209,7 +215,7 @@ export const RoundEngine = {
         config: this.isTutorialInterventionLayer()
           ? { toolDelayMs: 1, simulatedToolElapsedSec: 1, maxReplansPerRound: 4 }
           : undefined,
-        decider: this.isTutorialInterventionLayer() ? tutorialLayerDecider : undefined,
+        decider: this.isActiveTutorial() ? tutorialLayerDecider : undefined,
         delay: this.isTutorialInterventionLayer() ? () => this.waitForTutorialIntervention() : undefined,
         pipeline: {
           init: (cards) => UIRenderer.initPipeline(cards, {
@@ -268,6 +274,7 @@ export const RoundEngine = {
 
   toggleCard(cardId) {
     if (this.gameState?.phase !== 'play') return
+    this.clearTutorialLogQueue()
 
     if (this.selectedIds.has(cardId)) {
       this.selectedIds.delete(cardId)
@@ -333,6 +340,7 @@ export const RoundEngine = {
   },
 
   handleDecisionChange(input = {}) {
+    this.clearTutorialLogQueue()
     this.updateDecisionDraft(input)
     const selection = this.getSelectionState()
     selection.tutorial = this.buildTutorialFeedback(selection)
@@ -373,17 +381,6 @@ export const RoundEngine = {
     const result = requestPlayerIntervention(this.interventionState, input)
     this.renderInterventionState(result.message)
     if (result.accepted && this._tutorialExecutionResume) {
-      if ((result.instruction?.mode ?? input.type ?? input.mode) === 'shortcut') {
-        this._tutorialCustomPromptOpen = true
-        ThoughtChainPanel.appendLog({
-          timestampMs: Date.now(),
-          source: 'system',
-          text: `[干预已排队] ${result.instruction.text}`,
-          isStreaming: false,
-        })
-        this.renderInterventionState('快捷干预已排队。再写一句自定义干预示例，观察真实回合只能生效一次干预。')
-        return result
-      }
       ThoughtChainPanel.appendLog({
         timestampMs: Date.now(),
         source: 'system',
@@ -587,8 +584,31 @@ export const RoundEngine = {
     if (this._tutorialLogKeys.has(key)) return
     this._tutorialLogKeys.add(key)
 
-    const messages = TUTORIAL_LOGS[layer]?.[stage] ?? []
-    messages.forEach(appendTutorLog)
+    this.queueTutorialLogs(TUTORIAL_LOGS[layer]?.[stage] ?? [])
+  },
+
+  queueTutorialLogs(messages = []) {
+    if (!this.isActiveTutorial() || messages.length === 0) return
+    this._tutorialLogQueue.push(...messages)
+    this.flushNextTutorialLog()
+  },
+
+  flushNextTutorialLog() {
+    if (this._tutorialLogTimerId || this._tutorialLogQueue.length === 0) return
+
+    const text = this._tutorialLogQueue.shift()
+    appendTutorLog(text)
+
+    if (this._tutorialLogQueue.length === 0) return
+    if (typeof window === 'undefined') {
+      this.flushNextTutorialLog()
+      return
+    }
+
+    this._tutorialLogTimerId = window.setTimeout(() => {
+      this._tutorialLogTimerId = null
+      this.flushNextTutorialLog()
+    }, TUTORIAL_LOG_INTERVAL_MS)
   },
 
   handleTutorialCardSelected(card) {
@@ -637,9 +657,6 @@ export const RoundEngine = {
       appendTutorLog(negative
         ? '> 📉 EV 为负还硬打，结果就是亏。数字不会骗人。下次配到正再出手。'
         : '> 🎀 漂亮。第二课记住两件事：Gas 喂对牌，决策看 EV。下一关，玩点真的。')
-    }
-    if (layer === 3) {
-      this.appendTutorialLogs('execute')
     }
   },
 
@@ -703,6 +720,7 @@ export const RoundEngine = {
     this.clearPhaseTimer()
     this._revealTimers.forEach((timerId) => window.clearTimeout(timerId))
     this._revealTimers = []
+    this.clearTutorialLogQueue()
   },
 
   clearPhaseTimer() {
@@ -718,6 +736,12 @@ export const RoundEngine = {
     this._timerRemainingMs = 0
     this._timerDone = null
     this._paused = false
+  },
+
+  clearTutorialLogQueue() {
+    if (this._tutorialLogTimerId) window.clearTimeout(this._tutorialLogTimerId)
+    this._tutorialLogTimerId = null
+    this._tutorialLogQueue = []
   },
 }
 

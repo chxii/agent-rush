@@ -1,4 +1,3 @@
-import { SCENES } from '../config/scenes.js'
 import { INTERVENTION_SHORTCUTS } from '../config/execution.js'
 import { ROLE_CONFIG } from '../config/roles.js'
 import { calculateBroadcastSuccessProbability } from '../core/ToolSimulator.js'
@@ -162,34 +161,27 @@ export const UIRenderer = {
   },
 
   renderHeader(gameState) {
-    const sceneName = SCENES[gameState.currentScene]?.name ?? gameState.currentScene
     const progress = calculateWinLossProgress(gameState)
     elements.header.innerHTML = `
-      <div>
+      <div class="stat">
         <p class="label">层数</p>
-        <strong>${gameState.currentLayer}</strong>
+        <strong>${gameState.currentLayer} / ${progress.victory.targetLayer}</strong>
       </div>
-      <div>
-        <p class="label">场景</p>
-        <strong>${sceneName}</strong>
-      </div>
-      <div>
+      <div class="stat">
         <p class="label">Gas 池</p>
         <strong>${gameState.gasPool} / ${gameState.gasPoolMax}</strong>
       </div>
-      <div>
+      <div class="stat win">
         <p class="label">收益</p>
         <strong>${formatEth(gameState.cumulativeProfit)}</strong>
       </div>
-      <div>
+      <div class="stat win">
         <p class="label">胜利线</p>
         <strong>还差 ${formatUnsignedEth(progress.victory.profitRemaining)}</strong>
-        <small>距离第 ${progress.victory.targetLayer} 层还差 ${progress.victory.layersRemaining} 层</small>
       </div>
-      <div>
-        <p class="label">失败线</p>
-        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold} 连亏</strong>
-        <small>还能再亏 ${progress.failure.lossesRemaining} 次</small>
+      <div class="stat danger">
+        <p class="label">连续</p>
+        <strong>${progress.failure.consecutiveLoss} / ${progress.failure.consecutiveLossThreshold}</strong>
       </div>
     `
 
@@ -534,23 +526,33 @@ function renderTutorialPanel(tutorial) {
           .map((step, index) => `<span class="${index <= tutorial.stepIndex ? 'active' : ''}">${index + 1}. ${step}</span>`)
           .join('')}
       </div>
-      <strong>${tutorial.title}</strong>
-      <p>${tutorial.body}</p>
-      ${tutorial.extraHtml ?? ''}
-      ${tutorial.cards
-        .map(
-          (item) => `
-            <article class="tutorial-card-note ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
-              <div>
-                <strong>${item.name}</strong>
-                <span>${item.verdict}</span>
-              </div>
-              <small>成功率 ${formatPercent(item.successProbability)} · EV ${formatSignedEth(item.expectedValue)}</small>
-              <p>${item.formula}</p>
-            </article>
-          `,
-        )
-        .join('')}
+      ${renderTutorialInspection(tutorial)}
+    </div>
+  `
+}
+
+function renderTutorialInspection(tutorial) {
+  const selected = (tutorial.cards ?? []).filter((item) => item.selected)
+  if (selected.length === 0) {
+    return `<div class="tutorial-inspection empty">${tutorialEmptyHint(tutorial.layer)}</div>`
+  }
+
+  if (tutorial.layer === 3 && selected.length > 1) {
+    return `
+      <div class="tutorial-inspection compact">
+        ${selected.map((item) => `<span>${tutorialVerdictIcon(item)} ${item.typeLabel} EV ${formatSignedEth(item.expectedValue)}</span>`).join('')}
+      </div>
+    `
+  }
+
+  const item = selected[0]
+  return `
+    <div class="tutorial-inspection ${item.recommended ? 'recommended' : item.avoid ? 'avoid' : ''}">
+      <span>${tutorialVerdictIcon(item)} ${item.typeLabel} · ${item.shortId}</span>
+      <span>成功率 ${formatPercent(item.successProbability)}</span>
+      <span>EV ${formatSignedEth(item.expectedValue)}</span>
+      <span class="tutorial-inspection-verdict">${item.verdict}</span>
+      ${tutorial.layer === 2 ? `<span class="tutorial-formula">${item.formula}</span>` : ''}
     </div>
   `
 }
@@ -619,6 +621,9 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
     const ev = expectedValue(card, gas)
     return {
       name: `${typeMetaFor(card.type).label} ${shortId(card.id)}`,
+      typeLabel: typeMetaFor(card.type).label,
+      shortId: shortId(card.id),
+      selected: selectedIds.has(card.id),
       successProbability,
       expectedValue: ev,
       recommended: recommendedTutorialCard(layer, card, ev),
@@ -631,6 +636,7 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
   const selectedGasChanged = selectedCards.some((card) => (gasAllocations[card.id] ?? card.gasCost) !== card.gasCost)
   const stepIndex = selectedCards.length === 0 ? 0 : selectedGasChanged ? 2 : 1
   return {
+    layer,
     stepIndex,
     title: tutorialTitle(layer),
     body: tutorialBody(layer, notes),
@@ -758,6 +764,21 @@ function statusLabel(status) {
     failed: '败',
   }
   return labels[status] ?? status
+}
+
+function tutorialEmptyHint(layer) {
+  const hints = {
+    1: '点一张牌，看看它值不值得打 →',
+    2: '选一张牌，调 Gas 看 EV 怎么变 →',
+    3: '选 2 张牌，给每张设好预案 →',
+  }
+  return hints[layer] ?? '点一张牌查看账目 →'
+}
+
+function tutorialVerdictIcon(item) {
+  if (item.recommended) return '🟢'
+  if (item.avoid) return '🔴'
+  return '⚪'
 }
 
 function pipelineStatusLabel(card, status) {

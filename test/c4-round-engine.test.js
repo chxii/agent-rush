@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import { RoundEngine } from '../src/game/RoundEngine.js'
 import { UIRenderer } from '../src/ui/UIRenderer.js'
 import { ExecutionEngine } from '../src/game/ExecutionEngine.js'
+import { createInterventionState } from '../src/core/PlayerIntervention.js'
+import { ThoughtChainPanel } from '../src/ui/ThoughtChainPanel.js'
 
 test('tutorial helper is gated by tutorialSeen and only disables timers for active tutorial runs', () => {
   const originalState = RoundEngine.gameState
@@ -187,6 +189,98 @@ test('tutorial layer 3 uses scripted decider, forced steal hook, and delay hook'
   }
 })
 
+test('tutorial layers 1 and 2 use scripted decider without intervention delay/config', async () => {
+  const originalState = captureRoundEngineState()
+  const originalRun = ExecutionEngine.runSemiLoopMode
+  const originalRenderHand = UIRenderer.renderHand
+  const originalSetPlayEnabled = UIRenderer.setPlayEnabled
+  const originalSetSelectionStatus = UIRenderer.setSelectionStatus
+  const originalSetTimerText = UIRenderer.setTimerText
+  const originalSetExecutionMode = UIRenderer.setExecutionMode
+  const originalInitPipeline = UIRenderer.initPipeline
+  const originalSetInterventionState = UIRenderer.setInterventionState
+  const originalSetPlayButtonLabel = UIRenderer.setPlayButtonLabel
+  const captured = []
+
+  try {
+    ExecutionEngine.runSemiLoopMode = async (_battlePlan, _gameState, options) => {
+      captured.push({ layer: _gameState.currentLayer, options })
+      return { cards: [], netProfit: 0, gasUsed: 0 }
+    }
+    UIRenderer.renderHand = () => {}
+    UIRenderer.setPlayEnabled = () => {}
+    UIRenderer.setSelectionStatus = () => {}
+    UIRenderer.setTimerText = () => {}
+    UIRenderer.setExecutionMode = () => {}
+    UIRenderer.initPipeline = () => {}
+    UIRenderer.setInterventionState = () => {}
+    UIRenderer.setPlayButtonLabel = () => {}
+
+    for (const layer of [1, 2]) {
+      RoundEngine.gameState = { currentLayer: layer, phase: 'execute', tutorialSeen: false, gasPool: 150 }
+      RoundEngine.currentHand = [card(`selected-${layer}`, 40)]
+      RoundEngine.selectedIds = new Set([`selected-${layer}`])
+      RoundEngine.decisionDraft = {
+        gasAllocations: { [`selected-${layer}`]: 40 },
+        contingencies: { [`selected-${layer}`]: 'fight' },
+      }
+      RoundEngine.battlePlan = null
+
+      await RoundEngine.startExecute()
+    }
+
+    assert.equal(captured.length, 2)
+    captured.forEach(({ options }) => {
+      assert.ok(options.decider, 'active tutorial execution should pass scripted decider')
+      assert.equal(options.config, undefined)
+      assert.equal(options.delay, undefined)
+    })
+  } finally {
+    Object.assign(RoundEngine, originalState)
+    ExecutionEngine.runSemiLoopMode = originalRun
+    UIRenderer.renderHand = originalRenderHand
+    UIRenderer.setPlayEnabled = originalSetPlayEnabled
+    UIRenderer.setSelectionStatus = originalSetSelectionStatus
+    UIRenderer.setTimerText = originalSetTimerText
+    UIRenderer.setExecutionMode = originalSetExecutionMode
+    UIRenderer.initPipeline = originalInitPipeline
+    UIRenderer.setInterventionState = originalSetInterventionState
+    UIRenderer.setPlayButtonLabel = originalSetPlayButtonLabel
+  }
+})
+
+test('tutorial shortcut intervention resumes execution without requiring custom prompt', () => {
+  const originalState = captureRoundEngineState()
+  const originalSetInterventionState = UIRenderer.setInterventionState
+  const originalAppendLog = ThoughtChainPanel.appendLog
+  let resumed = false
+
+  try {
+    UIRenderer.setInterventionState = () => {}
+    ThoughtChainPanel.appendLog = () => {}
+    RoundEngine.gameState = { currentLayer: 3, phase: 'execute', tutorialSeen: false }
+    RoundEngine.interventionState = createInterventionState()
+    RoundEngine._interventionOpen = true
+    RoundEngine._tutorialExecutionPaused = true
+    RoundEngine._tutorialCustomPromptOpen = false
+    RoundEngine._tutorialExecutionResume = () => {
+      resumed = true
+    }
+
+    const result = RoundEngine.handleInterventionRequest({ type: 'shortcut', shortcutId: 'abandon_highest_risk' })
+
+    assert.equal(result.accepted, true)
+    assert.equal(resumed, true)
+    assert.equal(RoundEngine._tutorialExecutionResume, null)
+    assert.equal(RoundEngine._tutorialExecutionPaused, false)
+    assert.equal(RoundEngine._tutorialCustomPromptOpen, false)
+  } finally {
+    Object.assign(RoundEngine, originalState)
+    UIRenderer.setInterventionState = originalSetInterventionState
+    ThoughtChainPanel.appendLog = originalAppendLog
+  }
+})
+
 function captureRoundEngineState() {
   return {
     gameState: RoundEngine.gameState,
@@ -203,6 +297,8 @@ function captureRoundEngineState() {
     _tutorialExecutionPaused: RoundEngine._tutorialExecutionPaused,
     _tutorialCustomPromptOpen: RoundEngine._tutorialCustomPromptOpen,
     _tutorialExecutionResume: RoundEngine._tutorialExecutionResume,
+    _tutorialLogQueue: RoundEngine._tutorialLogQueue,
+    _tutorialLogTimerId: RoundEngine._tutorialLogTimerId,
   }
 }
 
