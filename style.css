@@ -184,8 +184,52 @@ h3 {
   font-size: 16px;
 }
 
-.codex-button {
+.codex-button-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-top: 14px;
+}
+
+.codex-button {
+  margin-top: 0;
+}
+
+.github-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.github-button svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.github-button .text {
+  margin: 0;
+  font-size: var(--font-sm);
+  letter-spacing: 1px;
+}
+
+.github-button:hover,
+.github-button:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .header-grid {
