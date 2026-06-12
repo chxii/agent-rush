@@ -6,11 +6,31 @@ import { TOOL_SIMULATOR_CONFIG } from '../config/toolSimulator.js'
 import { calculateWinLossProgress } from '../core/WinLoss.js'
 
 const CARD_TYPE_META = {
-  arbitrage: { label: '套利', className: 'type-arbitrage' },
-  sandwich: { label: '夹击', className: 'type-sandwich' },
-  front_run: { label: '抢跑', className: 'type-front-run' },
-  liquidation: { label: '清算', className: 'type-liquidation' },
-  nft_snipe: { label: 'NFT 抢购', className: 'type-nft-snipe' },
+  arbitrage: {
+    label: '套利',
+    className: 'type-arbitrage',
+    tip: 'A 便宜 B 贵，低买高卖。稳，但抢的人多，利润薄。',
+  },
+  sandwich: {
+    label: '夹击',
+    className: 'type-sandwich',
+    tip: '抢在大单前后买卖，最吃相邻排序，也最吃 Gas。',
+  },
+  front_run: {
+    label: '抢跑',
+    className: 'type-front-run',
+    tip: '正面拼出价和排队位置，Gas 不够就容易被盖过。',
+  },
+  liquidation: {
+    label: '清算',
+    className: 'type-liquidation',
+    tip: '帮系统平坏账领奖励，目标被先清就没了，堆 Gas 未必线性变强。',
+  },
+  nft_snipe: {
+    label: 'NFT 抢购',
+    className: 'type-nft-snipe',
+    tip: '抢限量名额或错价单，回报飘，窗口短，也更容易扑空。',
+  },
 }
 
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'abandoned'])
@@ -48,17 +68,19 @@ export const UIRenderer = {
     elements.actionBar = document.querySelector('#action-bar')
     elements.selectionStatus = document.querySelector('#selection-status')
 
-    if (!elements.selectionStatus && elements.actionBar) {
+    if (!elements.selectionStatus && elements.handArea?.parentElement) {
       elements.selectionStatus = document.createElement('div')
       elements.selectionStatus.id = 'selection-status'
       elements.selectionStatus.className = 'selection-status'
-      elements.actionBar.insertBefore(elements.selectionStatus, elements.actionBar.querySelector('#skip-button'))
+      elements.handArea.insertAdjacentElement('afterend', elements.selectionStatus)
+    } else if (elements.selectionStatus && elements.handArea?.parentElement && elements.selectionStatus.parentElement !== elements.handArea.parentElement) {
+      elements.handArea.insertAdjacentElement('afterend', elements.selectionStatus)
     }
 
     if (!elements.interventionPanel && elements.actionBar) {
       elements.interventionPanel = document.createElement('div')
       elements.interventionPanel.id = 'intervention-panel'
-      elements.interventionPanel.className = 'intervention-panel'
+      elements.interventionPanel.className = 'intervention-panel intervene'
       elements.actionBar.insertBefore(elements.interventionPanel, elements.actionBar.querySelector('#skip-button'))
     }
 
@@ -295,7 +317,9 @@ export const UIRenderer = {
     elements.handArea.innerHTML = `
       <section class="execution-workbench" data-execution-workbench>
         <div class="pipeline-bar" aria-label="执行顺序">
-          ${pipelineState.map((card, index) => renderPipelineChip(card, index, pipelineState.length)).join('')}
+          <span class="pipeline-label plabel">执行顺序</span>
+          ${pipelineState.map((card, index) => renderPipelineItem(card, index, pipelineState.length)).join('')}
+          <span class="pipeline-count pcount">${renderPipelineCount()}</span>
         </div>
         <div class="current-card-banner">
           ${renderCurrentBanner(currentPipelineCard())}
@@ -320,6 +344,10 @@ export const UIRenderer = {
 
   setPlayEnabled(enabled) {
     if (elements.playButton) elements.playButton.disabled = !enabled
+  },
+
+  setPlayButtonLabel(label) {
+    if (elements.playButton) elements.playButton.textContent = label
   },
 
   setTimerText(text) {
@@ -354,21 +382,22 @@ export const UIRenderer = {
       return
     }
 
-    const disabled = state.used || state.pending
+    const formDisabled = (state.used || state.pending) && !state.allowCustomPrompt
+    const shortcutsDisabled = state.used || state.pending
     elements.interventionPanel.hidden = false
     elements.interventionPanel.innerHTML = `
       <form class="intervention-form">
         <label>
           <span class="label">⚡ 干预</span>
-          <textarea data-intervention-input maxlength="140" rows="2" placeholder="告诉 Executor 要调整什么，例如：保住套利，放弃高风险牌。" ${disabled ? 'disabled' : ''}></textarea>
+          <textarea data-intervention-input maxlength="140" rows="2" placeholder="告诉 Executor 要调整什么，例如：保住套利，放弃高风险牌。" ${formDisabled ? 'disabled' : ''}></textarea>
         </label>
-        <button class="secondary-button" type="submit" ${disabled ? 'disabled' : ''}>发送</button>
+        <button class="secondary-button" type="submit" ${formDisabled ? 'disabled' : ''}>发送</button>
       </form>
       <div class="intervention-shortcuts">
         ${Object.values(INTERVENTION_SHORTCUTS)
           .map(
             (shortcut) =>
-              `<button class="secondary-button" type="button" data-intervention-shortcut="${shortcut.id}" ${disabled ? 'disabled' : ''}>${shortcut.label}</button>`,
+              `<button class="secondary-button" type="button" data-intervention-shortcut="${shortcut.id}" title="${shortcut.description ?? shortcut.label}" ${shortcutsDisabled ? 'disabled' : ''}>${shortcut.label}</button>`,
           )
           .join('')}
       </div>
@@ -381,6 +410,7 @@ export const UIRenderer = {
     if (elements.actionBar) elements.actionBar.dataset.phase = phase
 
     const isPlay = phase === 'play'
+    this.setPlayButtonLabel('执行')
     if (elements.playButton) elements.playButton.disabled = !isPlay
     if (elements.skipButton) elements.skipButton.disabled = !isPlay
     if (phase !== 'execute') this.setInterventionState(null)
@@ -458,6 +488,7 @@ function renderTutorialPanel(tutorial) {
       </div>
       <strong>${tutorial.title}</strong>
       <p>${tutorial.body}</p>
+      ${tutorial.extraHtml ?? ''}
       ${tutorial.cards
         .map(
           (item) => `
@@ -476,7 +507,11 @@ function renderTutorialPanel(tutorial) {
   `
 }
 
-function renderPipelineChip(card, index, total) {
+function renderPipelineItem(card, index, total) {
+  return `${renderPipelineChip(card)}${index < total - 1 ? '<span class="pipeline-arrow parrow">→</span>' : ''}`
+}
+
+function renderPipelineChip(card) {
   const typeMeta = typeMetaFor(card.type)
   const status = normalizeStatus(card.status)
   const statusClass = status === 'queued' ? 'pending' : status === 'running' || status === 'incident' ? 'now' : status === 'success' ? 'done' : 'fail'
@@ -487,7 +522,6 @@ function renderPipelineChip(card, index, total) {
         <strong>${typeMeta.label} ${shortId(card.id)}</strong>
         <small>${statusLabel(status)}</small>
       </span>
-      ${index < total - 1 ? '<span class="pipeline-arrow parrow">→</span>' : ''}
     </button>
   `
 }
@@ -547,12 +581,21 @@ export function buildTutorialFeedback({ layer, cards = [], selectedCards = [], g
   })
 
   const selectedGasChanged = selectedCards.some((card) => (gasAllocations[card.id] ?? card.gasCost) !== card.gasCost)
+  const stepIndex = selectedCards.length === 0 ? 0 : selectedGasChanged ? 2 : 1
   return {
-    stepIndex: selectedCards.length === 0 ? 0 : selectedGasChanged ? 2 : 1,
+    stepIndex,
     title: tutorialTitle(layer),
     body: tutorialBody(layer, notes),
+    extraHtml: tutorialExtraHtml(layer, stepIndex),
     cards: notes,
   }
+}
+
+function renderPipelineCount() {
+  const done = pipelineState.filter((card) => normalizeStatus(card.status) === 'success').length
+  const failed = pipelineState.filter((card) => normalizeStatus(card.status) === 'failed').length
+  const pending = pipelineState.filter((card) => normalizeStatus(card.status) === 'queued').length
+  return `${done} 成 · ${failed} 跑 · ${pending} 待 / 共 ${pipelineState.length}`
 }
 
 function estimateSuccessProbability(card, gas, context = {}) {
@@ -581,6 +624,7 @@ function recommendedTutorialCard(layer, card, ev) {
 
 function tutorialVerdict(layer, card, selected, ev) {
   if (card.isScam) return selected ? '别选：牌面风险低但真实风险极高。' : '排雷：这是骗局牌，别被高利润骗走 Gas。'
+  if (layer === 1) return `${typeMetaFor(card.type).tip} ${selected ? '看清类型后再决定是否值得打。' : '点牌可观察 EV 和成功率。'}`
   if (layer === 2 && card.type === 'sandwich') return selected ? '正确：现在调高 Gas 看成功率变化。' : '推荐：夹击最吃 Gas，适合练习溢价。'
   if (ev < 0) return selected ? '不推荐：算上真实风险和 Gas 后 EV 为负。' : '观察即可：EV 为负，长期会亏。'
   return selected ? '可以打：风险、Gas 和收益能对上。' : '可选：EV 为正，适合按步骤执行。'
@@ -589,17 +633,50 @@ function tutorialVerdict(layer, card, selected, ev) {
 function tutorialTitle(layer) {
   const titles = {
     1: '第 1 关：先排雷，再选稳牌',
-    2: '第 2 关：牌型配 Gas',
-    3: '第 3 关：用 EV 做决定',
+    2: '第 2 关：配 Gas，看 EV',
+    3: '第 3 关：预案和干预',
   }
   return titles[layer] ?? ''
 }
 
 function tutorialBody(layer, notes) {
-  if (layer === 1) return '点不同机会牌，比较显示风险和真实 EV。高利润低显示风险不一定安全。'
-  if (layer === 2) return '选中夹击或抢跑后调 Gas，成功率会实时重算。夹击牌从额外 Gas 里吃到的收益最大。'
+  if (layer === 1) return '先找骗局牌：显示风险很低、利润离谱，真实 EV 却很差。顺手把 5 种牌型认一遍，不同牌吃 Gas 的方式不一样。'
+  if (layer === 2) return 'Gas 池是本层预算，不用花光，也不结转。调每张牌的 Gas，观察成功率和 EV；EV 为正，才值得长期打。'
   const best = [...notes].sort((a, b) => b.expectedValue - a.expectedValue)[0]
-  return `Bot-404 威胁很低，但仍要按 EV 排序。当前最稳的是 ${best?.name ?? 'EV 为正的牌'}。`
+  return `每张牌都要设预案：被抢时硬刚、放弃，还是转移。Executor 会自己排执行顺序，通常优先打更有价值的牌；你通过预案和干预影响它。当前最稳的是 ${best?.name ?? 'EV 为正的牌'}。`
+}
+
+function tutorialExtraHtml(layer, stepIndex) {
+  if (layer === 1) {
+    return `
+      <div class="tutorial-mini-grid">
+        ${Object.values(CARD_TYPE_META)
+          .map((type) => `<span class="${type.className}"><strong>${type.label}</strong>${type.tip}</span>`)
+          .join('')}
+      </div>
+    `
+  }
+
+  if (layer === 2) {
+    return `
+      <div class="tutorial-tip">
+        <strong>EV 公式</strong>
+        <span>预期利润 × (1 - 真实风险) - 预计烧的 Gas。EV 为负代表长期亏，哪怕牌面利润看起来很香。</span>
+      </div>
+    `
+  }
+
+  if (layer === 3 && stepIndex >= 2) {
+    return `
+      <div class="contingency-guide">
+        <span><strong>硬刚</strong>：被抢时加价 replace 抢回，可能成功，也会多烧 Gas。</span>
+        <span><strong>放弃</strong>：立刻止损，只烧少量 Gas，保住池子给后面的牌。</span>
+        <span><strong>转移</strong>：找一张没打过的正 EV 替补牌；找不到就等同放弃。</span>
+      </div>
+    `
+  }
+
+  return ''
 }
 
 function currentPipelineCard() {

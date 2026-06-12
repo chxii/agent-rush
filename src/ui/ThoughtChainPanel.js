@@ -91,8 +91,8 @@ export const ThoughtChainPanel = {
 
     const row = document.createElement('div')
     row.className = `thought-event event-${event.kind ?? 'system'}`
-    if (event.kind === 'bot' || event.kind === 'incident') row.classList.add('is-steal')
-    if (event.kind === 'repair') row.classList.add('is-replan')
+    if (event.kind === 'bot' || event.kind === 'incident') row.classList.add('is-steal', 'steal')
+    if (event.kind === 'repair') row.classList.add('is-replan', 'replan')
 
     row.innerHTML = `
       <span class="event-icon">${iconForKind(event.kind)}</span>

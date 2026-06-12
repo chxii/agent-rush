@@ -83,11 +83,7 @@ export const OverlayManager = {
     const panel = showOverlay(
       `新对手出现：${bot.name}`,
       `
-        <div class="guide-entry bot-intro">
-          <p><strong>出现层数</strong><span>${bot.layers}</span></p>
-          <p><strong>威胁等级</strong><span class="threat-text">${bot.threat}</span></p>
-          <p><strong>风格</strong><span>${bot.style}</span></p>
-        </div>
+        <div class="bot-intro">${formatBotEntry(bot)}</div>
         <button id="bot-intro-confirm" class="primary-button" type="button">知道了</button>
       `,
     )
@@ -153,7 +149,13 @@ export const OverlayManager = {
     const panel = showOverlay(
       'Boss 奖励',
       `
-        <p class="overlay-copy">${formatRoleUpgrade(role, roleLevel)}</p>
+        <section class="gentry guide-entry bot-intro" style="--accent2:${agentAccent(role ?? {})}">
+          <div class="gh">
+            <span class="gn">${role?.name ?? '角色强化'}</span>
+            <span class="gtag">Lv.${roleLevel}</span>
+          </div>
+          <p class="buffline">${formatRoleUpgrade(role, roleLevel)}</p>
+        </section>
         <button id="boss-reward-confirm" class="primary-button" type="button">继续</button>
       `,
     )
@@ -165,6 +167,7 @@ export const OverlayManager = {
 
   showCodex(onClose = () => {}) {
     let activeTab = 'rules'
+    let rulesPageIndex = 0
 
     const render = () => {
       const panel = showCodexOverlay(
@@ -175,7 +178,7 @@ export const OverlayManager = {
             <button data-guide-tab="agents" class="${activeTab === 'agents' ? 'active' : ''}" type="button">角色</button>
             <button data-guide-tab="bots" class="${activeTab === 'bots' ? 'active' : ''}" type="button">对手</button>
           </div>
-          <div class="guide-content">${formatCodexTab(activeTab)}</div>
+          <div class="guide-content">${formatCodexTab(activeTab, rulesPageIndex)}</div>
           <button id="codex-close" class="primary-button" type="button">关闭</button>
         `,
       )
@@ -183,8 +186,17 @@ export const OverlayManager = {
       panel.querySelectorAll('[data-guide-tab]').forEach((button) => {
         button.addEventListener('click', () => {
           activeTab = button.dataset.guideTab
+          if (activeTab !== 'rules') rulesPageIndex = 0
           render()
         })
+      })
+      panel.querySelector('#codex-rules-prev')?.addEventListener('click', () => {
+        rulesPageIndex = Math.max(0, rulesPageIndex - 1)
+        render()
+      })
+      panel.querySelector('#codex-rules-next')?.addEventListener('click', () => {
+        rulesPageIndex = Math.min(RULES_PAGES.length - 1, rulesPageIndex + 1)
+        render()
       })
       panel.querySelectorAll('#codex-close, #codex-close-x').forEach((button) => button.addEventListener('click', () => {
         this.hideCodex()
@@ -294,9 +306,18 @@ function getCodexOverlay() {
   return panel
 }
 
-function formatCodexTab(tab) {
+function formatCodexTab(tab, rulesPageIndex = 0) {
   if (tab === 'rules') {
-    return RULES_PAGES.map((page) => `<section class="guide-section"><h3>${page.title}</h3>${formatParagraphs(page.body)}</section>`).join('')
+    const pageIndex = Math.max(0, Math.min(RULES_PAGES.length - 1, rulesPageIndex))
+    const page = RULES_PAGES[pageIndex]
+    return `
+      <section class="guide-section"><h3>${page.title}</h3>${formatParagraphs(page.body)}</section>
+      <div class="guide-pager codex-rule-pager">
+        <button id="codex-rules-prev" class="secondary-button" type="button" ${pageIndex === 0 ? 'disabled' : ''}>上一页</button>
+        <span>${pageIndex + 1} / ${RULES_PAGES.length}</span>
+        <button id="codex-rules-next" class="secondary-button" type="button" ${pageIndex === RULES_PAGES.length - 1 ? 'disabled' : ''}>下一页</button>
+      </div>
+    `
   }
 
   if (tab === 'agents') {

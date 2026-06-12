@@ -16,9 +16,10 @@ export const ExecutionEngine = {
         ? RuleDecider
         : new LLMDecider(ExecutorAI, {
         onCallStart: ({ callType, cardId }) => {
+          const streamCardId = cardScopedCallTypes.has(callType) ? cardId : null
           const writer = ThoughtChainPanel.appendStreaming(`[${callType}] `, null, {
-            cardId,
-            cardTitle: cardId,
+            cardId: streamCardId,
+            cardTitle: streamCardId,
           })
           streamWriters.set(streamKey(callType, cardId), writer)
         },
@@ -48,7 +49,7 @@ export const ExecutionEngine = {
         toolConfig: options.toolConfig,
         interventionState: options.interventionState,
         forceSteal: options.forceSteal,
-        delay: (ms) => delay(ms),
+        delay: options.delay ?? ((ms) => delay(ms)),
         hooks: createUiHooks({
           gameState,
           onExecutionComplete: options.onExecutionComplete,
@@ -58,6 +59,8 @@ export const ExecutionEngine = {
     )
   },
 }
+
+const cardScopedCallTypes = new Set(['CardExecution'])
 
 function createUiHooks(options = {}) {
   return {

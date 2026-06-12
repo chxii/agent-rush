@@ -17,6 +17,7 @@
         <div>
           <p class="eyebrow">Agent Rush</p>
           <h1>MEV 执行控制台</h1>
+          <span class="terminal-subtitle">MEV EXECUTION CONSOLE</span>
           <button id="codex-button" class="secondary-button codex-button" type="button">游戏规则与图鉴</button>
         </div>
         <div id="header" class="header-grid"></div>
@@ -70,7 +71,13 @@
       ProgressionEngine.setRoundStarter(startRound)
 
       UIRenderer.onCardClick((cardId) => RoundEngine.toggleCard(cardId))
-      UIRenderer.onPlayClick((options) => RoundEngine.confirmPlay(options))
+      UIRenderer.onPlayClick((options) => {
+        if (GameState.phase === 'execute') {
+          RoundEngine.confirmSettle()
+          return
+        }
+        RoundEngine.confirmPlay(options)
+      })
       UIRenderer.onDecisionChange((input) => RoundEngine.handleDecisionChange(input))
       UIRenderer.onInterventionRequest((input) => RoundEngine.handleInterventionRequest(input))
       document.querySelector('#codex-button').addEventListener('click', () => {
@@ -81,7 +88,6 @@
       const beginRun = () => {
         if (!GameState.tutorialSeen) {
           OverlayManager.showWelcome(() => {
-            GameState.markTutorialSeen()
             ProgressionEngine.startRun(GameState)
           })
           return

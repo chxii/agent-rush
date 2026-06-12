@@ -28,10 +28,10 @@ export function getFallbackPlan(callType, input = {}) {
 
 function buildInitialPlanning(input) {
   const cards = [...(input.cards ?? [])]
-  const executionOrder = cards.sort((a, b) => b.expectedProfit - a.expectedProfit).map((card) => card.id)
+  const executionOrder = cards.sort((a, b) => expectedValue(b) - expectedValue(a)).map((card) => card.id)
 
   return {
-    reasoning: 'Order selected cards by expected value. Player gas allocations stay unchanged.',
+    reasoning: 'Direct ExecutorAI mock only: order selected cards by EV. Runtime no-key execution uses RuleDecider.',
     executionOrder,
   }
 }
@@ -99,7 +99,7 @@ function buildPlayerIntervention(input) {
   const state = input.currentExecutionState ?? { allCardStatuses: [] }
 
   return {
-    reasoning: 'Player intervention is reserved for A5; keep current order for now.',
+    reasoning: 'Direct ExecutorAI mock only: echo current allocations and order for a safe intervention fallback.',
     interpretedIntent: input.playerInstruction ?? 'continue',
     updatedGasAllocations: state.allCardStatuses.map((card) => ({
       cardId: card.id,
@@ -107,6 +107,11 @@ function buildPlayerIntervention(input) {
     })),
     updatedExecutionOrder: state.allCardStatuses.map((card) => card.id),
   }
+}
+
+function expectedValue(card) {
+  const gas = card.gasBudget ?? card.allocatedGas ?? card.gasCost ?? 0
+  return (card.expectedProfit ?? 0) * (1 - (card.trueRisk ?? card.displayedRisk ?? 0)) - gas * 0.001
 }
 
 async function streamText(text, onChunk) {
