@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Rush — Demo 幻灯</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- =====================================================================
+       ★★★ 改文字看这里：本文件所有可见文案都集中在最底部的 <script> 里的
+            SLIDES 常量（搜索 "★ 改文案区"）。改那一处即可，不用动 HTML/CSS。
+            改完直接保存、刷新浏览器即生效（纯静态，无需构建）。
+       ===================================================================== -->
+
+  <style>
+    /* ---- 配色 / 字体：与游戏 style.css 完全一致（终端监控台风） ---- */
+    :root {
+      color-scheme: dark;
+      --bg: #07090b;
+      --bg-soft: #0b0f12;
+      --surface: rgba(9, 13, 15, 0.94);
+      --line: #263137;
+      --line-strong: #3a4a51;
+      --text: #eaf7f0;
+      --muted: #8ea39a;
+      --accent: #2bd98a;
+      --accent-strong: #178f5b;
+      --green-glow: #39ffa0;
+      --warn: #ffc14d;
+      --danger: #ff5d5d;
+      --blue: #4aa8ff;
+      --arbitrage: #2bd9c0;
+      --sandwich: #8a8cff;
+      --front-run: #ff9d3d;
+      --liquidation: #ff5d8f;
+      --nft-snipe: #b07cff;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background:
+        radial-gradient(1200px 500px at 70% -10%, rgba(43, 217, 138, 0.08), transparent 60%),
+        linear-gradient(180deg, rgba(43, 217, 138, 0.13), transparent 32%),
+        linear-gradient(90deg, rgba(43, 217, 138, 0.055) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(43, 217, 138, 0.045) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, auto, 26px 26px, 26px 26px, auto;
+      color: var(--text);
+      font-family: "JetBrains Mono", "Noto Sans SC", ui-monospace, Consolas, sans-serif;
+      overflow: hidden;
+    }
+    /* 扫描线叠层 */
+    body::before {
+      content: "";
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 3px);
+    }
+
+    /* ---- 幻灯舞台 ---- */
+    .deck { position: relative; z-index: 1; height: 100vh; width: 100vw; }
+    .slide {
+      position: absolute; inset: 0;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      padding: 6vh 8vw;
+      animation: fadein 0.4s ease;
+    }
+    .slide.active { display: flex; }
+    @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    /* 顶部小标签栏（每页都有，营造控制台感） */
+    .chrome {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 24px;
+      font-size: 12px; letter-spacing: 0.12em; color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      background: rgba(7,9,11,0.6);
+    }
+    .chrome .dot { color: var(--accent); }
+
+    /* 文字层级 */
+    .eyebrow { font-size: 14px; letter-spacing: 0.28em; color: var(--accent); text-transform: uppercase; margin-bottom: 18px; }
+    h1.title { font-size: clamp(40px, 7vw, 96px); font-weight: 800; letter-spacing: 0.04em; margin: 0; line-height: 1.02; }
+    .subtitle { font-size: clamp(14px, 1.6vw, 20px); letter-spacing: 0.34em; color: var(--muted); margin-top: 10px; text-transform: uppercase; }
+    .lead { font-size: clamp(18px, 2.3vw, 30px); line-height: 1.5; margin: 28px 0 0; max-width: 60ch; }
+    .lead .hl { color: var(--accent); font-weight: 700; }
+    .footnote { font-size: clamp(13px, 1.3vw, 17px); color: var(--muted); margin-top: 30px; }
+
+    /* 两栏对照（页A的 Web3 / AI 内核） */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 40px; }
+    .col { border: 1px solid var(--line-strong); border-radius: 2px; padding: 26px 28px; background: var(--surface); }
+    .col h3 { margin: 0 0 16px; font-size: clamp(16px, 1.8vw, 22px); letter-spacing: 0.1em; }
+    .col.web3 h3 { color: var(--blue); }
+    .col.ai h3 { color: var(--accent); }
+    .col ul { margin: 0; padding-left: 0; list-style: none; }
+    .col li { font-size: clamp(14px, 1.5vw, 19px); line-height: 1.9; color: var(--text); }
+    .col li::before { content: "▸ "; color: var(--muted); }
+
+    /* 三点编号列表（页B） */
+    .points { margin-top: 38px; display: flex; flex-direction: column; gap: 22px; }
+    .point { display: flex; gap: 20px; align-items: baseline; }
+    .point .n { font-size: clamp(22px, 3vw, 40px); font-weight: 800; color: var(--accent); min-width: 1.4em; }
+    .point .body { font-size: clamp(16px, 1.9vw, 24px); line-height: 1.45; }
+    .point .body b { color: var(--green-glow); }
+    .point .body span { color: var(--muted); }
+
+    /* 收尾页标签芯片 */
+    .chips { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 34px; }
+    .chip { border: 1px solid var(--accent-strong); color: var(--accent); border-radius: 2px; padding: 10px 18px; font-size: clamp(13px, 1.4vw, 18px); letter-spacing: 0.06em; }
+    .origin { font-size: clamp(15px, 1.7vw, 22px); line-height: 1.6; color: var(--text); margin-top: 36px; max-width: 62ch; border-left: 3px solid var(--accent); padding-left: 20px; }
+    .links { margin-top: 30px; font-size: clamp(13px, 1.4vw, 18px); color: var(--muted); }
+    .links a { color: var(--accent); text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+
+    /* 进入游戏按钮（收尾页） */
+    .enter-btn {
+      margin-top: 40px; align-self: flex-start;
+      font: inherit; font-size: clamp(16px, 1.8vw, 22px); font-weight: 700; letter-spacing: 0.1em;
+      color: var(--bg); background: var(--accent); border: none; border-radius: 2px;
+      padding: 16px 36px; cursor: pointer; transition: background 0.15s;
+    }
+    .enter-btn:hover { background: var(--green-glow); }
+    .enter-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+
+    /* 底部导航 */
+    .nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 2;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 24px; font-size: 13px; color: var(--muted);
+      border-top: 1px solid var(--line); background: rgba(7,9,11,0.6);
+    }
+    .nav button {
+      font: inherit; font-size: 13px; color: var(--text); background: transparent;
+      border: 1px solid var(--line-strong); border-radius: 2px; padding: 6px 14px; cursor: pointer;
+    }
+    .nav button:hover { border-color: var(--accent); color: var(--accent); }
+    .nav .pager { letter-spacing: 0.1em; }
+    .nav .hint { color: var(--muted); opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <div class="chrome">
+    <span><span class="dot">●</span>&nbsp; AGENT RUSH // MEV EXECUTION CONSOLE</span>
+    <span id="chrome-tag">DEMO DECK</span>
+  </div>
+
+  <!-- 幻灯内容由底部脚本根据 SLIDES 渲染进这里 -->
+  <div class="deck" id="deck"></div>
+
+  <div class="nav">
+    <button id="prev">◀ 上一页 (←)</button>
+    <span class="pager"><span id="cur">1</span> / <span id="total">3</span></span>
+    <span class="hint">空格/→ 下一页 · F 全屏</span>
+    <button id="next">下一页 (→) ▶</button>
+  </div>
+
+  <script>
+    /* =====================================================================
+       ★ 改文案区 —— 只改这里的文字即可。每页结构见注释。
+       - 想改某句话：直接改对应字符串。
+       - 想加/删一条 bullet：增删数组里的一项。
+       - 想调整进游戏链接：改 ENTER_GAME_URL。
+       - HTML 标签可用：<b> 加粗、<span class="hl"> 高亮绿、普通文字直接写。
+       ===================================================================== */
+
+    // 「进入游戏」按钮跳转目标。
+    // 本文件在 docs/demo/ 下，游戏在仓库根目录，所以用 ../../ 回到根再进 index.html。
+    // 想带 demo 模式参数，改成 '../../index.html?demo=1'（需 Codex 先实现 ?demo=1）。
+    const ENTER_GAME_URL = '../../index.html';
+
+    const SLIDES = [
+      // ---------- 幻灯页 A：一句话定义 + AI×Web3 双钩子 ----------
+      {
+        tag: '01 / WHAT IS IT',
+        type: 'cover',
+        eyebrow: 'Z.AI 赛道 · Web3 × 长程任务能力',
+        title: 'AGENT RUSH',
+        subtitle: 'MEV EXECUTION CONSOLE',
+        lead: '你是一名 MEV 搜索者（searcher）。<span class="hl">你定策略，你的 AI Executor 替你下场。</span>',
+        cols: {
+          web3: {
+            heading: 'Web3 内核',
+            items: [
+              '真实以太坊 MEV 博弈',
+              '套利 / 夹击 / 抢跑 / 清算 / NFT 抢购',
+              'mempool · Gas 竞价 · 被对手抢占',
+            ],
+          },
+          ai: {
+            heading: 'AI 内核',
+            items: [
+              'GLM 驱动的长程 Agent',
+              '任务分解 → 调用链上工具',
+              '被抢时实时重规划 → 人话交付',
+            ],
+          },
+        },
+        footnote: '浏览器打开即玩，无需钱包 / 合约 / 后端。',
+      },
+
+      // ---------- 幻灯页 B：为什么必须用 LLM ----------
+      {
+        tag: '02 / WHY AN LLM',
+        type: 'points',
+        eyebrow: '评委最会问：这个用普通工作流也能做吗？',
+        heading: '全游戏只有一个地方用 LLM——<br>但那个地方工作流替代不了',
+        points: [
+          { body: '<b>环境是对抗、动态的</b> <span>—— 会被抢、会失败、Gas 会不够，不是预设分支</span>' },
+          { body: '<b>Agent 真的在读工具返回再决策</b> <span>—— 不是念稿，是看到真实结果才决定下一步</span>' },
+          { body: '<b>玩家能用自然语言临场干预</b> <span>—— LLM 解读意图，融入剩余规划</span>' },
+        ],
+        footnote: '对手 Bot、数值结算都是规则 / 确定性的——AI 只放在不可替代的那一个点。',
+      },
+
+      // ---------- 幻灯页 C：收尾（含进入游戏按钮） ----------
+      {
+        tag: '03 / AGENT RUSH',
+        type: 'closing',
+        eyebrow: 'AI × Web3 天然合一',
+        lead: '一个 LLM 长程 Agent，在真实 MEV 对抗里，<span class="hl">替你规划、执行、应变、交付。</span>',
+        chips: ['GLM 长程能力可见', '真实 Web3 MEV 内核', '浏览器打开即玩'],
+        // 作者缘起（真诚的一句）。想改语气就改这里。
+        origin: '我是 Web3 新手，两周前才接触 MEV。做这个游戏，是想亲手体会一次链上抢夺的乐趣——也让任何人玩过就懂 MEV。',
+        // 底部链接。改 text 改显示文字，改 href 改跳转。
+        links: [
+          { text: '在线试玩', href: '#' },
+          { text: 'GitHub', href: 'https://github.com/chxii/agent-rush' },
+        ],
+        enterLabel: '进入游戏 ▶',
+      },
+    ];
+
+    /* =====================================================================
+       ↓↓↓ 渲染逻辑（一般不用改） ↓↓↓
+       ===================================================================== */
+
+    const deck = document.getElementById('deck');
+
+    function renderSlide(s) {
+      const el = document.createElement('section');
+      el.className = 'slide';
+
+      if (s.type === 'cover') {
+        el.innerHTML = `
+          <div class="eyebrow">${s.eyebrow}</div>
+          <h1 class="title">${s.title}</h1>
+          <div class="subtitle">${s.subtitle}</div>
+          <p class="lead">${s.lead}</p>
+          <div class="cols">
+            <div class="col web3">
+              <h3>${s.cols.web3.heading}</h3>
+              <ul>${s.cols.web3.items.map((i) => `<li>${i}</li>`).join('')}</ul>
+            </div>
+            <div class="col ai">
+              <h3>${s.cols.ai.heading}</h3>
+              <ul>${s.cols.ai.items.map((i) => `<li>${i}</li>`).join('')}</ul>
+            </div>
+          </div>
+          <div class="footnote">${s.footnote}</div>`;
+      } else if (s.type === 'points') {
+        el.innerHTML = `
+          <div class="eyebrow">${s.eyebrow}</div>
+          <h1 class="title" style="font-size:clamp(28px,4vw,52px);line-height:1.15">${s.heading}</h1>
+          <div class="points">
+            ${s.points.map((p, idx) => `
+              <div class="point"><span class="n">${idx + 1}</span><span class="body">${p.body}</span></div>
+            `).join('')}
+          </div>
+          <div class="footnote">${s.footnote}</div>`;
+      } else if (s.type === 'closing') {
+        el.innerHTML = `
+          <div class="eyebrow">${s.eyebrow}</div>
+          <p class="lead" style="margin-top:0">${s.lead}</p>
+          <div class="chips">${s.chips.map((c) => `<span class="chip">${c}</span>`).join('')}</div>
+          <div class="origin">${s.origin}</div>
+          <div class="links">${s.links.map((l) => `<a href="${l.href}">${l.text}</a>`).join('　·　')}</div>
+          <button class="enter-btn" id="enter-game">${s.enterLabel}</button>`;
+      }
+      return el;
+    }
+
+    SLIDES.forEach((s) => deck.appendChild(renderSlide(s)));
+
+    const slides = Array.from(deck.querySelectorAll('.slide'));
+    const tagEl = document.getElementById('chrome-tag');
+    const curEl = document.getElementById('cur');
+    const totalEl = document.getElementById('total');
+    totalEl.textContent = slides.length;
+
+    let idx = 0;
+    function show(n) {
+      idx = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+      curEl.textContent = idx + 1;
+      tagEl.textContent = SLIDES[idx].tag || 'DEMO DECK';
+      // 进游戏按钮（仅收尾页有）
+      const btn = document.getElementById('enter-game');
+      if (btn) btn.onclick = () => { window.location.href = ENTER_GAME_URL; };
+    }
+    show(0);
+
+    document.getElementById('next').onclick = () => show(idx + 1);
+    document.getElementById('prev').onclick = () => show(idx - 1);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); show(idx + 1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); show(idx - 1); }
+      else if (e.key === 'f' || e.key === 'F') {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen();
+      }
+    });
+  </script>
+</body>
+</html>

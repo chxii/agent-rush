@@ -5,7 +5,9 @@ node_modules/
 config/env.js
 
 # 设计文档、计划文档（仅本地）
-docs/
+docs/archive/
+docs/dev/
+docs/demo/
 
 # 系统文件
 .DS_Store
@@ -26,8 +28,7 @@ npm-debug.log*
 dist/
 build/
 
-# Local web research cache
-.firecrawl/
 
-# CodeGraph 本地索引缓存
+.firecrawl/
 .codegraph/
+.claude/
