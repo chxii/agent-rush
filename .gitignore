@@ -32,3 +32,5 @@ build/
 .firecrawl/
 .codegraph/
 .claude/
+.agents/
+skills-lock.json
