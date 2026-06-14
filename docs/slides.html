@@ -108,12 +108,22 @@
     .point .body { font-size: clamp(16px, 1.9vw, 24px); line-height: 1.45; }
     .point .body b { color: var(--green-glow); }
     .point .body span { color: var(--muted); }
+    /* 内容页（section 类型）的小标题分组 */
+    .section-list-title { margin-top: 26px; font-size: clamp(15px, 1.7vw, 21px); letter-spacing: 0.08em; color: var(--accent); border-left: 3px solid var(--accent); padding-left: 14px; font-weight: 700; }
+    /* 内联工具名（等宽代码样式） */
+    .point .body code { color: var(--accent); background: rgba(43, 217, 138, 0.1); border: 1px solid var(--line-strong); border-radius: 2px; padding: 1px 6px; font-size: 0.92em; white-space: nowrap; }
 
     /* 收尾页标签芯片 */
-    .chips { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 34px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
     .chip { border: 1px solid var(--accent-strong); color: var(--accent); border-radius: 2px; padding: 10px 18px; font-size: clamp(13px, 1.4vw, 18px); letter-spacing: 0.06em; }
-    .origin { font-size: clamp(15px, 1.7vw, 22px); line-height: 1.6; color: var(--text); margin-top: 36px; max-width: 62ch; border-left: 3px solid var(--accent); padding-left: 20px; }
-    .links { margin-top: 30px; font-size: clamp(13px, 1.4vw, 18px); color: var(--muted); }
+    /* 收尾页未来展望（紧凑，避免压住进游戏按钮） */
+    .roadmap { margin-top: 26px; max-width: 80ch; }
+    .roadmap-title { font-size: clamp(14px, 1.5vw, 19px); letter-spacing: 0.06em; color: var(--accent); font-weight: 700; margin-bottom: 12px; }
+    .roadmap-item { font-size: clamp(13px, 1.35vw, 17px); line-height: 1.5; margin-bottom: 9px; padding-left: 16px; border-left: 2px solid var(--line-strong); }
+    .roadmap-item b { color: var(--green-glow); }
+    .roadmap-item span { color: var(--muted); }
+    .origin { font-size: clamp(14px, 1.55vw, 20px); line-height: 1.55; color: var(--text); margin-top: 26px; max-width: 62ch; border-left: 3px solid var(--accent); padding-left: 20px; }
+    .links { margin-top: 22px; font-size: clamp(13px, 1.4vw, 18px); color: var(--muted); }
     .links a { color: var(--accent); text-decoration: none; }
     .links a:hover { text-decoration: underline; }
 
@@ -169,9 +179,9 @@
        ===================================================================== */
 
     // 「进入游戏」按钮跳转目标。
-    // 本文件在 docs/demo/ 下，游戏在仓库根目录，所以用 ../../ 回到根再进 index.html。
-    // 想带 demo 模式参数，改成 '../../index.html?demo=1'（需 Codex 先实现 ?demo=1）。
-    const ENTER_GAME_URL = '../../index.html';
+    // 本地录制用：直接跳到本地服务的 demo 场景。
+    // ⚠ 若要把 PPT 发到线上/给别人看，改成线上地址或相对路径 '../../index.html?demo=1'。
+    const ENTER_GAME_URL = 'http://localhost:8000/?demo=1';
 
     const SLIDES = [
       // ---------- 幻灯页 A：一句话定义 + AI×Web3 双钩子 ----------
@@ -181,12 +191,12 @@
         eyebrow: 'Z.AI 赛道 · Web3 × 长程任务能力',
         title: 'AGENT RUSH',
         subtitle: 'MEV EXECUTION CONSOLE',
-        lead: '你是一名 MEV 搜索者（searcher）。<span class="hl">你定策略，你的 AI Executor 替你下场。</span>',
+        lead: '你是一名以太坊上的 MEV 搜索者（searcher），挑机会、分 Gas、定预案。然后把方案交给你的 AI Agent Executor，它去规划、调用工具，被对手抢了就临场重规划。<span class="hl">你定策略，Executor 替你上场。</span>',
         cols: {
           web3: {
             heading: 'Web3 内核',
             items: [
-              '真实以太坊 MEV 博弈',
+              '真实以太坊 MEV 博弈的简化',
               '套利 / 夹击 / 抢跑 / 清算 / NFT 抢购',
               'mempool · Gas 竞价 · 被对手抢占',
             ],
@@ -196,40 +206,83 @@
             items: [
               'GLM 驱动的长程 Agent',
               '任务分解 → 调用链上工具',
-              '被抢时实时重规划 → 人话交付',
+              '被抢时实时重规划 → 自然语言交付',
             ],
           },
         },
-        footnote: '浏览器打开即玩，无需钱包 / 合约 / 后端。',
+        footnote: 'MEV Roguelike Game × Long-Horizon Agent',
       },
 
-      // ---------- 幻灯页 B：为什么必须用 LLM ----------
+      // ---------- 幻灯页 B：背景（长程 Agent 的展示困境 + MEV 为何天然契合） ----------
       {
-        tag: '02 / WHY AN LLM',
-        type: 'points',
-        eyebrow: '评委最会问：这个用普通工作流也能做吗？',
-        heading: '全游戏只有一个地方用 LLM——<br>但那个地方工作流替代不了',
+        tag: '02 / BACKGROUND',
+        type: 'section',
+        eyebrow: '背景',
+        heading: '长程 Agent 的展示困境',
+        lead: 'Agent 的价值在于「<span class="hl">怎么一步步把复杂目标做完</span>」——但大多数应用只给用户看最终结果。规划、工具调用、错误修复，全藏在后台。',
+        listTitle: 'MEV 是天然的长程对抗场景',
         points: [
-          { body: '<b>环境是对抗、动态的</b> <span>—— 会被抢、会失败、Gas 会不够，不是预设分支</span>' },
-          { body: '<b>Agent 真的在读工具返回再决策</b> <span>—— 不是念稿，是看到真实结果才决定下一步</span>' },
-          { body: '<b>玩家能用自然语言临场干预</b> <span>—— LLM 解读意图，融入剩余规划</span>' },
+          { body: '<b>资源约束真实</b> <span>—— Gas 有限，多张牌共享一个池</span>' },
+          { body: '<b>对抗压力真实</b> <span>—— 对手 Bot 抢同一笔利润，倒逼实时重规划</span>' },
+          { body: '<b>信息不对称真实</b> <span>—— 骗局牌伪装低风险，考验玩家排雷</span>' },
         ],
-        footnote: '对手 Bot、数值结算都是规则 / 确定性的——AI 只放在不可替代的那一个点。',
+        footnote: 'Agent Rush 把 Agent 的全过程摊开给人看——顺带让没碰过 Web3 的人玩一遍就懂 MEV。',
       },
 
-      // ---------- 幻灯页 C：收尾（含进入游戏按钮） ----------
+      // ---------- 幻灯页 C：核心设计（你定战术，Executor 替你执行） ----------
       {
-        tag: '03 / AGENT RUSH',
+        tag: '03 / THE DESIGN',
+        type: 'section',
+        eyebrow: '核心设计',
+        heading: '你定战术，Executor 替你执行',
+        lead: '全游戏<span class="hl">只有一个地方用了 LLM</span>——Executor 的执行循环。其余部分明确标注为规则引擎。',
+        listTitle: 'Executor 的四步循环',
+        points: [
+          { body: '<b>任务分解</b> <span>—— 把「执行 N 张牌」拆开排序</span>' },
+          { body: '<b>工具调用</b> <span>—— 7 个链上模拟工具自主挑选：<code>fetch_prices</code> / <code>monitor_mempool</code> / <code>broadcast_tx</code> / <code>replace_tx</code> / <code>scan_replacement</code> / <code>reallocate_gas</code> / <code>abandon_card</code></span>' },
+          { body: '<b>重规划</b> <span>—— 被抢占 / Gas 不足 / 玩家干预，实时调整</span>' },
+          { body: '<b>闭环交付</b> <span>—— 自然语言复盘，生成结算报告</span>' },
+        ],
+        footnote: '思维链逐字流式展示，玩家看到的是 AI 实时思考的过程。',
+      },
+
+      // ---------- 幻灯页 D：How to play（游戏规则） ----------
+      {
+        tag: '04 / HOW TO PLAY',
+        type: 'section',
+        eyebrow: 'How to play · 游戏规则',
+        heading: '每层一个回合循环，撑到第 20 层冲过收益线',
+        lead: '每层都是「<span class="hl">扫描 → 决策 → 执行 → 结算</span>」：系统发机会牌，你做三维决策，Executor 半闭环执行，点结算才出损益报告。',
+        listTitle: '你的三维决策（决策阶段）',
+        points: [
+          { body: '<b>选牌</b> <span>—— 从发到的机会牌里挑（每层 1→2→3 张随层解锁），骗局牌伪装低风险，先排雷</span>' },
+          { body: '<b>分 Gas</b> <span>—— 多张牌共享一个池，此消彼长，分多分少决定谁更稳</span>' },
+          { body: '<b>设预案</b> <span>—— 遇袭怎么办：硬刚 <code>fight</code> / 放弃 <code>abandon</code> / 转移 <code>transfer</code>；执行中还有一次 60s 临场干预</span>' },
+        ],
+        footnote: '胜利：撑到第 20 层且累计收益 > 8.75 ETH。失败：连亏 ≥ 2 且累计为负。顶部实时显示离胜负线还有多远。',
+      },
+
+      // ---------- 幻灯页 E：收尾（含进入游戏按钮） ----------
+      {
+        tag: '05 / AGENT RUSH',
         type: 'closing',
-        eyebrow: 'AI × Web3 天然合一',
+        eyebrow: 'AI × Web3',
         lead: '一个 LLM 长程 Agent，在真实 MEV 对抗里，<span class="hl">替你规划、执行、应变、交付。</span>',
         chips: ['GLM 长程能力可见', '真实 Web3 MEV 内核', '浏览器打开即玩'],
+        // 未来展望（极简两方向，放在 chips 与缘起之间）。想删就整段删掉 roadmap。
+        roadmap: {
+          title: '🚀 未来展望',
+          items: [
+            { body: '<b>从模拟器到真实链上沙盘</b> <span>—— 接入实时 mempool 生成机会卡、分叉 EVM 真实执行交易、对齐 Flashbots Bundle 现代 MEV 架构</span>' },
+            { body: '<b>抽象为通用长程对抗 Agent</b> <span>—— 解耦 MEV 业务后，同一套「意图-资源-Tool loop-动态冲突」可承载跨链流动性、多 Agent 同场竞争等场景</span>' },
+          ],
+        },
         // 作者缘起（真诚的一句）。想改语气就改这里。
-        origin: '我是 Web3 新手，两周前才接触 MEV。做这个游戏，是想亲手体会一次链上抢夺的乐趣——也让任何人玩过就懂 MEV。',
+        origin: '我是 Web3 新手，刚刚接触 Web3 的各种概念。做这个游戏，是想亲手体会一次链上抢夺的乐趣，也让任何人玩过就懂 MEV。',
         // 底部链接。改 text 改显示文字，改 href 改跳转。
         links: [
-          { text: '在线试玩', href: '#' },
-          { text: 'GitHub', href: 'https://github.com/chxii/agent-rush' },
+          { text: '在线试玩：https://agent-rush.vercel.app/', href: 'https://agent-rush.vercel.app/' },
+          { text: 'GitHub：https://github.com/chxii/agent-rush', href: 'https://github.com/chxii/agent-rush' },
         ],
         enterLabel: '进入游戏 ▶',
       },
@@ -272,11 +325,28 @@
             `).join('')}
           </div>
           <div class="footnote">${s.footnote}</div>`;
+      } else if (s.type === 'section') {
+        el.innerHTML = `
+          <div class="eyebrow">${s.eyebrow}</div>
+          <h1 class="title" style="font-size:clamp(26px,3.6vw,46px);line-height:1.12">${s.heading}</h1>
+          <p class="lead" style="font-size:clamp(15px,1.7vw,21px);margin-top:18px">${s.lead}</p>
+          ${s.listTitle ? `<div class="section-list-title">${s.listTitle}</div>` : ''}
+          <div class="points" style="margin-top:14px;gap:13px">
+            ${s.points.map((p, idx) => `
+              <div class="point"><span class="n">${idx + 1}</span><span class="body" style="font-size:clamp(14px,1.5vw,19px)">${p.body}</span></div>
+            `).join('')}
+          </div>
+          <div class="footnote">${s.footnote}</div>`;
       } else if (s.type === 'closing') {
         el.innerHTML = `
           <div class="eyebrow">${s.eyebrow}</div>
           <p class="lead" style="margin-top:0">${s.lead}</p>
           <div class="chips">${s.chips.map((c) => `<span class="chip">${c}</span>`).join('')}</div>
+          ${s.roadmap ? `
+          <div class="roadmap">
+            <div class="roadmap-title">${s.roadmap.title}</div>
+            ${s.roadmap.items.map((it) => `<div class="roadmap-item">${it.body}</div>`).join('')}
+          </div>` : ''}
           <div class="origin">${s.origin}</div>
           <div class="links">${s.links.map((l) => `<a href="${l.href}">${l.text}</a>`).join('　·　')}</div>
           <button class="enter-btn" id="enter-game">${s.enterLabel}</button>`;
