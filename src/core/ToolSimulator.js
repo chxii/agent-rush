@@ -354,20 +354,19 @@ function scanReplacement(state, params, config) {
 
 function reallocateGas(state, params) {
   const allocations = Array.isArray(params.allocations) ? params.allocations : []
-  const totalGas = allocations.reduce((sum, item) => sum + clampInt(item.gas ?? 0, 0), 0)
-  if (totalGas > state.gasPool) {
-    return invalidToolResult('reallocate_gas', '重分配超过剩余 Gas 池。', {
-      requestedGas: totalGas,
-      remainingGasPool: state.gasPool,
-    })
-  }
 
+  // 玩家/LLM 干预常按「原分配 + 追加」给出超过剩余池的数字（原分配是计划值，从未真正进池）。
+  // 不再整体拒绝（那会让干预看似生效实则改不动结局），而是按请求顺序在剩余池内尽量满足，
+  // 单牌请求超池则给到池上限。totalGas ≤ pool 时行为与旧版完全一致（向后兼容）。
+  let budget = state.gasPool
   const updatedAllocations = []
   for (const allocation of allocations) {
     const card = state.cards.find((item) => item.id === allocation.cardId)
     if (!card || TERMINAL_STATUSES.has(card.status)) continue
-    card.allocatedGas = clampInt(allocation.gas, 0)
-    updatedAllocations.push({ cardId: card.id, gas: card.allocatedGas })
+    const granted = Math.min(clampInt(allocation.gas, 0), budget)
+    card.allocatedGas = granted
+    budget -= granted
+    updatedAllocations.push({ cardId: card.id, gas: granted })
   }
 
   return {

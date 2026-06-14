@@ -429,6 +429,7 @@ export const UIRenderer = {
     if (!state || state.phase !== 'execute') {
       elements.interventionPanel.hidden = true
       elements.interventionPanel.innerHTML = ''
+      this._interventionSignature = null
       return
     }
 
@@ -436,9 +437,28 @@ export const UIRenderer = {
     const shortcutsDisabled = state.used || state.pending
     const countdown = Number.isFinite(Number(state.remainingSec)) ? ` · 剩 ${Math.max(0, Number(state.remainingSec))}s` : ''
     const progress = interventionProgress(state)
+
+    // 倒计时每 250ms 刷新一次。若表单结构未变（只有剩余秒数变化），只更新倒计时文字，
+    // 不重写 innerHTML——否则会清空玩家正在输入的内容、丢失焦点（无法自然语言干预）。
+    const signature = `${formDisabled}|${shortcutsDisabled}|${state.canSkip}|${state.message ?? ''}|${state.allowCustomPrompt}`
+    if (this._interventionSignature === signature && !elements.interventionPanel.hidden) {
+      const statusEl = elements.interventionPanel.querySelector('[data-intervention-countdown]')
+      if (statusEl) statusEl.textContent = `⚠ 可干预${countdown}`
+      const barEl = elements.interventionPanel.querySelector('.intervention-progress > span')
+      if (barEl) {
+        const total = Number(state.windowTotalSec)
+        const remaining = Number(state.remainingSec)
+        if (Number.isFinite(total) && total > 0 && Number.isFinite(remaining)) {
+          barEl.style.width = `${Math.max(0, Math.min(100, (remaining / total) * 100)).toFixed(1)}%`
+        }
+      }
+      return
+    }
+    this._interventionSignature = signature
+
     elements.interventionPanel.hidden = false
     elements.interventionPanel.innerHTML = `
-      ${state.canSkip ? `<div class="intervention-window-status"><div><span>⚠ 可干预${countdown}</span>${progress}</div><button class="secondary-button" type="button" data-intervention-skip>跳过</button></div>` : ''}
+      ${state.canSkip ? `<div class="intervention-window-status"><div><span data-intervention-countdown>⚠ 可干预${countdown}</span>${progress}</div><button class="secondary-button" type="button" data-intervention-skip>跳过</button></div>` : ''}
       <form class="intervention-form">
         <label>
           <span class="label">⚡ 干预</span>

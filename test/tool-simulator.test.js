@@ -105,6 +105,31 @@ test('illegal tool actions are rejected without mutating state', () => {
   assert.deepEqual(after, before)
 })
 
+test('reallocate_gas clamps over-pool requests to the remaining pool instead of rejecting', () => {
+  // 回归：玩家/LLM 干预常按「原分配 + 追加」给出超过剩余池的绝对值（如要 78，池仅 33）。
+  // 旧实现整体拒绝 → 受影响牌没补到 Gas → 干预看似生效实则改不动结局。
+  // 现在应钳制到可用池：单牌请求超池则给到池上限，按请求顺序依次扣减。
+  const simulator = createToolSimulator({ cards: createCards(), gasPool: 33, seed: 1 })
+
+  const single = simulator.execute('reallocate_gas', { allocations: [{ cardId: 'card_A', gas: 78 }] })
+  assert.equal(single.success, true)
+  assert.deepEqual(single.updatedAllocations, [{ cardId: 'card_A', gas: 33 }])
+  assert.equal(simulator.snapshot().cards.find((c) => c.id === 'card_A').allocatedGas, 33)
+
+  // 多牌超池：按顺序填充，第一张吃满池后第二张拿到剩余 0。
+  const sim2 = createToolSimulator({ cards: createCards(), gasPool: 33, seed: 1 })
+  const multi = sim2.execute('reallocate_gas', {
+    allocations: [
+      { cardId: 'card_A', gas: 50 },
+      { cardId: 'card_B', gas: 50 },
+    ],
+  })
+  assert.deepEqual(multi.updatedAllocations, [
+    { cardId: 'card_A', gas: 33 },
+    { cardId: 'card_B', gas: 0 },
+  ])
+})
+
 test('broadcast_tx success distribution tracks the configured probability', () => {
   const runs = 1000
   let successes = 0

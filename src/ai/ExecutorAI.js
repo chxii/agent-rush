@@ -40,6 +40,7 @@ const OUTPUT_CONTRACTS = {
   PlayerIntervention: [
     'Output schema:',
     '{ "reasoning": string, "interpretedIntent": string, "updatedGasAllocations": [{ "cardId": string, "gas": integer }], "updatedExecutionOrder": string[] }',
+    'gas is an absolute target drawn from currentExecutionState.remainingGasPool, NOT an amount added to a previous allocation. The sum of all updatedGasAllocations.gas must not exceed remainingGasPool. Already-settled cards keep no reservable gas.',
   ].join('\n'),
   SettlementReport: [
     'Output schema:',
