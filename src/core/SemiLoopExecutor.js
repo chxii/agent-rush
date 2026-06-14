@@ -123,24 +123,7 @@ async function executeCard(card, state) {
     if (TERMINAL_STATUSES.has(card.status)) break
 
     if (action === 'broadcast_tx') {
-      const params = buildBroadcastParams(card, state, competitorGasBid)
-      const result = await executeTool(card, action, params, state)
-      syncWorkingCard(card, state.simulator)
-
-      if (await maybeHandlePlayerIntervention(card, state)) continue
-
-      if (result.invalid && isGasInsufficient(result)) {
-        await handleIncident(card, INCIDENT_TYPES.GAS_INSUFFICIENT, result, state)
-        continue
-      }
-      if (result.stolen) {
-        await handleIncident(card, INCIDENT_TYPES.TARGET_STOLEN, result, state)
-        continue
-      }
-      if (isTerminalInterventionFailure(result)) {
-        await maybeHandleTerminalFailureIncident(card, terminalFailureIncidentType(result), result, state)
-        continue
-      }
+      await attemptBroadcast(card, state, competitorGasBid)
       continue
     }
 
@@ -154,6 +137,48 @@ async function executeCard(card, state) {
       await applyPlayerContingency(card, result, state)
     }
   }
+}
+
+const MAX_REBROADCASTS_PER_CARD = 1
+
+async function attemptBroadcast(card, state, competitorGasBid, rebroadcasts = 0) {
+  const params = buildBroadcastParams(card, state, competitorGasBid)
+  const result = await executeTool(card, 'broadcast_tx', params, state)
+  syncWorkingCard(card, state.simulator)
+
+  if (await maybeHandlePlayerIntervention(card, state)) {
+    await maybeRebroadcast(card, state, competitorGasBid, rebroadcasts)
+    return
+  }
+
+  if (result.invalid && isGasInsufficient(result)) {
+    await handleIncident(card, INCIDENT_TYPES.GAS_INSUFFICIENT, result, state)
+    await maybeRebroadcast(card, state, competitorGasBid, rebroadcasts)
+    return
+  }
+  if (result.stolen) {
+    await handleIncident(card, INCIDENT_TYPES.TARGET_STOLEN, result, state)
+    return
+  }
+  if (isTerminalInterventionFailure(result)) {
+    await maybeHandleTerminalFailureIncident(card, terminalFailureIncidentType(result), result, state)
+  }
+}
+
+// 重规划 / 玩家干预可能补足了这张牌的 Gas（reallocate_gas 只更新 allocatedGas，未真正广播）。
+// 若牌仍未结算、且补后的出价已能负担，则用新的 allocation 真正重新广播一次，让干预能改变结局。
+// 受 MAX_REBROADCASTS_PER_CARD 限制，避免连续 Gas 不足时无限重试。
+async function maybeRebroadcast(card, state, competitorGasBid, rebroadcasts) {
+  if (TERMINAL_STATUSES.has(card.status)) return
+  if (rebroadcasts >= MAX_REBROADCASTS_PER_CARD) return
+
+  syncWorkingCard(card, state.simulator)
+  const gas = Math.max(0, Math.round(Number(card.allocatedGas ?? card.gasCost) || 0))
+  const snapshot = state.simulator.snapshot()
+  // 出价仍需为正且不超过当前剩余池；最低广播门槛由模拟器内部兜底判定。
+  if (gas <= 0 || gas > snapshot.gasPool) return
+
+  await attemptBroadcast(card, state, competitorGasBid, rebroadcasts + 1)
 }
 
 async function applyPlayerContingency(card, mempoolResult, state) {

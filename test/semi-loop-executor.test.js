@@ -66,6 +66,84 @@ test('semi-loop handles gas insufficiency through a narrow replan decision', asy
   assert.ok(['reallocate_gas', 'abandon_card', 'retry_broadcast'].includes(result.telemetry.incidentDecisions[0].decision.action))
 })
 
+test('semi-loop re-broadcasts a card after a replan tops up its gas', async () => {
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 40, b: 40 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 50, layer: 8, scene: 'nft_market' },
+    {
+      decider: createReallocateDecider(),
+      fallbackDecider: RuleDecider,
+      // b 首次广播 Gas 不足，补足后重广播应当成交。
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['success', 'insufficient', 'success'] }),
+      maxReplans: 3,
+    },
+  )
+
+  const b = result.cards.find((card) => card.id === 'b')
+  assert.equal(b.status, 'success')
+  assert.equal(result.telemetry.incidents.length, 1)
+  assert.equal(result.telemetry.incidents[0].event, 'gas_insufficient')
+})
+
+test('semi-loop abandons a card when a re-broadcast still cannot afford gas', async () => {
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 40, b: 40 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 50, layer: 8, scene: 'nft_market' },
+    {
+      decider: createReallocateDecider(),
+      fallbackDecider: RuleDecider,
+      // b 持续 Gas 不足：重广播一次后仍失败，落回兜底放弃。
+      simulatorFactory: createScriptedSimulatorFactory({ broadcasts: ['success', 'insufficient', 'insufficient', 'insufficient'] }),
+      maxReplans: 3,
+    },
+  )
+
+  const b = result.cards.find((card) => card.id === 'b')
+  assert.equal(b.status, 'abandoned')
+})
+
+test('semi-loop limits re-broadcasts to one attempt per card', async () => {
+  const cards = createCards().slice(0, 2)
+  const battlePlan = createBattlePlan({
+    selectedCards: cards,
+    gasAllocations: { a: 40, b: 40 },
+    contingencies: { a: 'fight', b: 'fight' },
+  })
+
+  const broadcastIds = []
+  const result = await runSemiLoopExecution(
+    battlePlan,
+    { gasPool: 50, layer: 8, scene: 'nft_market' },
+    {
+      decider: createReallocateDecider(),
+      fallbackDecider: RuleDecider,
+      simulatorFactory: createScriptedSimulatorFactory({
+        broadcasts: ['success', 'insufficient', 'insufficient', 'insufficient'],
+        onBroadcast: (params) => broadcastIds.push(params.cardId),
+      }),
+      maxReplans: 3,
+    },
+  )
+
+  // b: 初次广播 + 至多一次重广播 = 2 次，不会无限重试。
+  assert.equal(broadcastIds.filter((id) => id === 'b').length, 2)
+  assert.equal(result.cards.find((card) => card.id === 'b').status, 'abandoned')
+})
+
 test('semi-loop does not replan on a smooth round', async () => {
   const cards = createCards().slice(0, 2)
   const battlePlan = createBattlePlan({
@@ -468,6 +546,35 @@ function createSpyDecider(base = RuleDecider) {
 
     async decideOnIncident(snapshot) {
       this.incidentSnapshots.push(snapshot)
+      return base.decideOnIncident(snapshot)
+    },
+
+    async summarize(input) {
+      return base.summarize(input)
+    },
+  }
+}
+
+// 重规划时把全部剩余 Gas 池补给受影响牌（模拟玩家「集中保这张」或 LLM 补 Gas）。
+function createReallocateDecider(base = RuleDecider) {
+  return {
+    async planInitial(input) {
+      return base.planInitial(input)
+    },
+
+    async decideOnIncident(snapshot) {
+      const eventType = snapshot.trigger?.type ?? snapshot.event
+      if (eventType === 'gas_insufficient') {
+        const affectedCardId = snapshot.affectedCardId ?? snapshot.trigger?.cardId
+        const pool = Math.max(0, Math.round(Number(snapshot.remainingGasPool) || 0))
+        return {
+          action: 'reallocate_gas',
+          targetCardId: affectedCardId,
+          gasAllocations: [{ cardId: affectedCardId, gas: pool }],
+          updatedExecutionOrder: [affectedCardId],
+          reasoning: 'Top up the affected card with the whole remaining pool.',
+        }
+      }
       return base.decideOnIncident(snapshot)
     },
 
